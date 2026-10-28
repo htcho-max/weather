@@ -53,8 +53,16 @@
 - **공유 이미지**: 하늘 영역 '공유' 버튼 → 1080×1350 canvas(지역·날짜·기온·마스코트·체감 등 4칸·옷차림·특보) →
   `navigator.share(files)` 가능하면 공유 시트(카톡), 아니면 PNG 저장. 화면에 보이는 값(관측 반영)을 그대로 씀
 
+## 2026-10-28 설정 창 (3차)
+- 본문 맨 아래 설정 카드 → **설정 창**(`<dialog id="setDlg">`, 휴대폰은 전체 화면, 넓은 화면은 가운데 카드). 하늘 영역 오른쪽 위 ⚙️ 버튼, 지역 이름(▾)을 눌러도 열림
+- 설정 창 순서: 처음 보여줄 지역(`weather:start` = 'gps' | 'pick') → 지역 고르기(mainPicker + 내 위치) → 단위 → 출퇴근 시각·비 알림 → 기상청 공식 데이터 → 화면 구성
+- 첫 화면에는 즐겨찾기 칩·⚙️ 설정만 남김. 지역 드롭다운은 설정 창으로 이동
+- 시작이 'gps'면 위치를 기다리다 1.5초가 지나면 마지막 지역을 먼저 보여주고, 위치가 나오면 바꿈. 위치로 고른 곳은 `gps:true`, 이름 앞에 📍
+- 예보 비교: '기상청 공식'을 맨 앞(범례·표·기관 고르기)에. Open-Meteo의 kma_seamless 이름을 '기상청 수치모델'로 바꿔 구분
+  (복구되면 '기상청 공식'과 별도 줄로 나옴)
+
 ## 예보 모델 비교
-- 모델: kma_seamless(한국, 대체 kma_gdps·kma_ldps), ecmwf_ifs025, gfs_seamless, jma_seamless, icon_seamless,
+- 모델: kma_seamless('기상청 수치모델', 대체 kma_gdps·kma_ldps), ecmwf_ifs025, gfs_seamless, jma_seamless, icon_seamless,
   ukmo_seamless, meteofrance_seamless, gem_seamless
 - 여러 모델 한 번 요청 시 값 이름 뒤에 `_모델ID`가 붙음 → `pickModel()`로 분리. 실패하면 모델별 요청으로 대체
 - 일별 값이 null이면 시간별 값으로 직접 계산(`fillDailyFromHourly`), 범례에 * 표시
@@ -73,7 +81,7 @@
 - 저장된 장소는 `sel`(드롭다운 인덱스)로 최신 좌표를 다시 계산(`refreshPlace`)
 
 ## 브라우저 저장소 키 (모두 localStorage, `weather:` 접두사)
-place, rcPlace, favs, units, commute, layout, kma, cmpOff, rainAlert, cache:{위도,경도}, cacheIdx, normals:{위도,경도}, log:{위도,경도},
+place, rcPlace, favs, units, commute, layout, kma, cmpOff, rainAlert, start, cache:{위도,경도}, cacheIdx, normals:{위도,경도}, log:{위도,경도},
 actual:{위도,경도}, down:{모델ID}
 
 ## 디자인
