@@ -61,6 +61,12 @@
 - 예보 비교: '기상청 공식'을 맨 앞(범례·표·기관 고르기)에. Open-Meteo의 kma_seamless 이름을 '기상청 수치모델'로 바꿔 구분
   (복구되면 '기상청 공식'과 별도 줄로 나옴)
 
+## 2026-10-28 화면 테마 (4차)
+- 설정 '화면 테마': 자동(기기 따라) / 밝게 / 어둡게 → `weather:theme`, `<html data-theme>`. `<head>` 안 작은 스크립트가 그리기 전에 적용(깜빡임 방지)
+- CSS: 다크 변수는 `@media (prefers-color-scheme: dark){ :root:not([data-theme=light]) … }` + `:root[data-theme=dark]` 두 곳에 같은 내용
+- 다크일 때 낮 하늘(clear-day·cloud-day·rain·snow·dusk)도 어두운 색으로. 머리 영역 칩 배경은 `body.skyDark`(다크 테마이거나 밤·뇌우)로 통일
+- theme-color 메타도 테마 따라 바꿈(#1d1a2c / #a8d4ff)
+
 ## 예보 모델 비교
 - 모델: kma_seamless('기상청 수치모델', 대체 kma_gdps·kma_ldps), ecmwf_ifs025, gfs_seamless, jma_seamless, icon_seamless,
   ukmo_seamless, meteofrance_seamless, gem_seamless
@@ -81,7 +87,7 @@
 - 저장된 장소는 `sel`(드롭다운 인덱스)로 최신 좌표를 다시 계산(`refreshPlace`)
 
 ## 브라우저 저장소 키 (모두 localStorage, `weather:` 접두사)
-place, rcPlace, favs, units, commute, layout, kma, cmpOff, rainAlert, start, cache:{위도,경도}, cacheIdx, normals:{위도,경도}, log:{위도,경도},
+place, rcPlace, favs, units, commute, layout, kma, cmpOff, rainAlert, start, theme, cache:{위도,경도}, cacheIdx, normals:{위도,경도}, log:{위도,경도},
 actual:{위도,경도}, down:{모델ID}
 
 ## 디자인

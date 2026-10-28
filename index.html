@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>하늘</title>
 <meta name="theme-color" content="#a8d4ff">
+<script>
+// 화면 테마를 그리기 전에 먼저 정해요 (깜빡임 방지): weather:theme = "auto" | "light" | "dark"
+try{ const t = JSON.parse(localStorage.getItem('weather:theme') || '"auto"'); if(t==='light'||t==='dark') document.documentElement.dataset.theme = t; }catch(e){}
+</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -31,8 +35,9 @@
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
+/* 다크 모드: 설정이 '자동'이면 기기 설정을 따르고, '어둡게'면 항상 (html[data-theme]) */
 @media (prefers-color-scheme: dark){
-  :root{ color-scheme: dark;
+  :root:not([data-theme="light"]){ color-scheme: dark;
     --page:#1d1a2c; --surface:#28243b; --ink:#f1ecff; --muted:#c3bcdc; --line:#3a3452; --chip:#332e4a;
     --outline:#ffffff12;
     --warm:#ffa48a; --cool:#93bcf2; --rain:#8cbcf0; --sun:#ffd166;
@@ -41,6 +46,14 @@
     --g1:#7fb3f0; --g2:#5fcf95; --g3:#ffb45c; --g4:#ff857d; --g5:#c79af2;
     --shadow:0 3px 0 #15121f; }
 }
+:root[data-theme="dark"]{ color-scheme: dark;
+    --page:#1d1a2c; --surface:#28243b; --ink:#f1ecff; --muted:#c3bcdc; --line:#3a3452; --chip:#332e4a;
+    --outline:#ffffff12;
+    --warm:#ffa48a; --cool:#93bcf2; --rain:#8cbcf0; --sun:#ffd166;
+    --m1:#86a9f5; --m2:#c3a0f2; --m3:#ff8f86; --m4:#5fd3ae; --m5:#f2c25a; --m6:#5cc8e8; --m7:#f58cbd; --m8:#b5cd6a; --m9:#a9bcff;
+    --warnBg:#5a2f2a; --warnInk:#ffd9cc;
+    --g1:#7fb3f0; --g2:#5fcf95; --g3:#ffb45c; --g4:#ff857d; --g5:#c79af2;
+    --shadow:0 3px 0 #15121f; }
 *,*::before,*::after{box-sizing:inherit}
 html,body{margin:0}
 body{background:var(--page);color:var(--ink);font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;font-size:17px;line-height:1.6;letter-spacing:-.01em;word-break:keep-all;
@@ -60,6 +73,9 @@ body[data-sky="snow"]{--sky-a:#dbe7ff;--sky-b:#ffffff;--sky-ink:#3d3459}
 body[data-sky="storm"]{--sky-a:#7a77a8;--sky-b:#bdb6dc;--sky-ink:#ffffff}
 body[data-sky="night"]{--sky-a:#3a3470;--sky-b:#7d70bd;--sky-ink:#fbf8ff}
 body[data-sky="dusk"]{--sky-a:#b7a6ec;--sky-b:#ffcbb8;--sky-ink:#3b2f55}
+/* 다크 모드의 낮 하늘은 어둡게 */
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) body[data-sky="clear-day"]{--sky-a:#27406b;--sky-b:#4a3f6e;--sky-ink:#f1ecff} :root:not([data-theme="light"]) body[data-sky="cloud-day"]{--sky-a:#34384f;--sky-b:#4a4560;--sky-ink:#f1ecff} :root:not([data-theme="light"]) body[data-sky="rain"]{--sky-a:#243452;--sky-b:#3c4766;--sky-ink:#f1ecff} :root:not([data-theme="light"]) body[data-sky="snow"]{--sky-a:#38435f;--sky-b:#59617e;--sky-ink:#f1ecff} :root:not([data-theme="light"]) body[data-sky="dusk"]{--sky-a:#3d3064;--sky-b:#6a4a60;--sky-ink:#f1ecff} }
+:root[data-theme="dark"] body[data-sky="clear-day"]{--sky-a:#27406b;--sky-b:#4a3f6e;--sky-ink:#f1ecff} :root[data-theme="dark"] body[data-sky="cloud-day"]{--sky-a:#34384f;--sky-b:#4a4560;--sky-ink:#f1ecff} :root[data-theme="dark"] body[data-sky="rain"]{--sky-a:#243452;--sky-b:#3c4766;--sky-ink:#f1ecff} :root[data-theme="dark"] body[data-sky="snow"]{--sky-a:#38435f;--sky-b:#59617e;--sky-ink:#f1ecff} :root[data-theme="dark"] body[data-sky="dusk"]{--sky-a:#3d3064;--sky-b:#6a4a60;--sky-ink:#f1ecff}
 
 .wrap{max-width:600px;margin:0 auto;position:relative;z-index:1}
 .picker{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -68,18 +84,20 @@ body[data-sky="dusk"]{--sky-a:#b7a6ec;--sky-b:#ffcbb8;--sky-ink:#3b2f55}
 .sky .picker select{background-color:rgba(255,255,255,.85);border-color:transparent}
 .sky .picker select:hover{background-color:#fff}
 section .picker select{background-color:var(--chip);color:var(--ink)}
-@media (prefers-color-scheme: dark){ section .picker select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23aea6c9' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E")} }
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) section .picker select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23aea6c9' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E")} }
+:root[data-theme="dark"] section .picker select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23aea6c9' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E")}
 .picker select:disabled{opacity:.5}
 .picker button{cursor:pointer;background:var(--butter);color:#3d3459;border-color:transparent;box-shadow:0 3px 0 #e8c65a;font-family:"Jua",inherit}
 .picker button:active{transform:translateY(2px);box-shadow:0 1px 0 #e8c65a}
 @media (min-width:560px){.sheet .picker{grid-template-columns:1fr 1fr 1fr auto} section .picker{grid-template-columns:1fr 1fr 1fr}}
 .sheet .picker select{background-color:var(--chip);color:var(--ink)}
-@media (prefers-color-scheme: dark){ .sheet .picker select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23aea6c9' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E")} }
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .sheet .picker select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23aea6c9' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E")} }
+:root[data-theme="dark"] .sheet .picker select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23aea6c9' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E")}
 .topBar{display:flex;align-items:center;gap:8px}
 .topBar .favs{flex:1;margin-top:0;min-width:0}
 .gear{all:unset;flex:none;margin-left:auto;cursor:pointer;font-family:"Jua",inherit;font-size:15.5px;line-height:1;padding:8px 14px;border-radius:999px;background:rgba(255,255,255,.6);color:inherit}
 .gear:focus-visible{outline:3px solid currentColor}
-body[data-sky="night"] .gear,body[data-sky="storm"] .gear{background:rgba(255,255,255,.18)}
+body.skyDark .gear{background:rgba(255,255,255,.18)}
 .placeBtn{all:unset;cursor:pointer;font-family:"Jua",inherit;font-size:20.5px;line-height:1.4;border-radius:8px}
 .placeBtn:focus-visible{outline:3px solid currentColor}
 .placeBtn::after{content:" ▾";font-size:15px;opacity:.6}
@@ -123,8 +141,8 @@ section .favs button{background:var(--chip)}
 .facts{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:18px;font-size:14.5px}
 .facts div{background:rgba(255,255,255,.5);border-radius:18px;padding:8px 4px;text-align:center}
 .facts b{display:block;font-family:"Jua",inherit;font-size:19.5px}
-body[data-sky="night"] .facts div,body[data-sky="storm"] .facts div{background:rgba(255,255,255,.14)}
-body[data-sky="night"] .favs button,body[data-sky="storm"] .favs button{background:rgba(255,255,255,.18)}
+body.skyDark .facts div{background:rgba(255,255,255,.14)}
+body.skyDark .favs button{background:rgba(255,255,255,.18)}
 
 /* 카드: 스티커처럼 */
 main{padding:22px 14px 36px}
@@ -201,7 +219,7 @@ main{padding-top:34px}
 .warnBar small{display:block;font-size:13.5px;opacity:.85}
 .shareBtn{all:unset;cursor:pointer;font-family:"Jua",inherit;font-size:14.5px;line-height:1;padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.55);color:inherit;margin-left:2px}
 .shareBtn:focus-visible{outline:3px solid currentColor}
-body[data-sky="night"] .shareBtn,body[data-sky="storm"] .shareBtn{background:rgba(255,255,255,.16)}
+body.skyDark .shareBtn{background:rgba(255,255,255,.16)}
 .linkBtn{all:unset;cursor:pointer;color:var(--cool);text-decoration:underline;text-underline-offset:3px}
 .linkBtn:focus-visible{outline:3px solid var(--lilac)}
 #cmpChart svg{display:block;width:100%;height:auto}
@@ -256,11 +274,11 @@ table.rc thead th{color:var(--ink);font-family:"Jua",inherit}
 .setRow input[type=url]{font:inherit;font-size:15px;flex:1 1 100%;min-width:0;padding:7px 14px;border-radius:999px;border:2px solid var(--outline);background:var(--chip);color:var(--ink)}
 .setRow .resetBtn{margin-top:0}
 .obsTag{display:inline-block;font-size:13.5px;padding:1px 9px;margin-left:4px;border-radius:999px;background:rgba(255,255,255,.55);vertical-align:2px}
-body[data-sky="night"] .obsTag,body[data-sky="storm"] .obsTag{background:rgba(255,255,255,.16)}
+body.skyDark .obsTag{background:rgba(255,255,255,.16)}
 .foot{font-size:13.5px;color:var(--muted);text-align:center;margin:6px 0}
 .foot a{color:inherit}
 .stale{margin:12px 0 0;font-size:14px;text-align:center;background:rgba(255,255,255,.55);color:#3d3459;border-radius:999px;padding:6px 14px}
-body[data-sky="night"] .stale,body[data-sky="storm"] .stale{background:rgba(255,255,255,.18);color:inherit}
+body.skyDark .stale{background:rgba(255,255,255,.18);color:inherit}
 @media (prefers-reduced-motion:reduce){.sky{transition:none}.buddy{animation:none}}
 </style>
 </head>
@@ -371,6 +389,11 @@ body[data-sky="night"] .stale,body[data-sky="storm"] .stale{background:rgba(255,
       <button type="button" id="locate">내 위치</button>
     </div>
     <p class="note" id="pickMsg" role="status"></p>
+  </div>
+  <div class="setBlock">
+    <h3>화면 테마</h3>
+    <div class="chips" id="themeMode" role="group" aria-label="화면 테마"></div>
+    <p class="note" style="margin-top:0">자동은 휴대폰(컴퓨터)의 다크 모드 설정을 따라가요.</p>
   </div>
   <div class="setBlock">
     <h3>단위</h3>
@@ -2114,7 +2137,7 @@ function renderCommute(){
   else if(s.length===2 && Math.abs(s[0].t-s[1].t)>=7) msg = `출근길과 퇴근길의 기온 차이가 ${r(Math.abs(dT(s[0].t-s[1].t)))}°예요. 겉옷을 챙기세요.`;
   else msg = `출퇴근길 모두 날씨 걱정은 없어요.`;
   $('commute').innerHTML = `<div class="commute">${s.map(card).join('')}</div><p class="verdict">${msg}</p>
-    <p class="note">지금 보고 있는 지역 기준이에요. 시각은 맨 아래 설정에서 바꿀 수 있어요.</p>`;
+    <p class="note">지금 보고 있는 지역 기준이에요. 시각은 오른쪽 위 ⚙️ 설정에서 바꿀 수 있어요.</p>`;
 }
 
 /* ---------- 생활 지수 (옷차림의 오늘/내일을 따라감) ---------- */
@@ -2377,6 +2400,28 @@ $('units').addEventListener('click', e=>{
 });
 $('unitsReset').addEventListener('click', ()=>{ layout = defaultLayout(); saveLayout(); });
 
+/* ---------- 화면 테마 (자동 / 밝게 / 어둡게) ---------- */
+let theme = store.get('weather:theme', 'auto');
+const darkMQ = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+const isDark = () => theme==='dark' || (theme==='auto' && !!darkMQ?.matches);
+function applyTheme(){
+  if(theme==='auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
+  const sky = document.body.dataset.sky;
+  document.body.classList.toggle('skyDark', isDark() || sky==='night' || sky==='storm');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if(meta) meta.content = isDark() ? '#1d1a2c' : '#a8d4ff';
+}
+function renderTheme(){
+  $('themeMode').innerHTML = [['auto','자동'],['light','☀️ 밝게'],['dark','🌙 어둡게']].map(([k,l])=>`<button type="button" data-k="${k}" aria-pressed="${theme===k}">${l}</button>`).join('');
+}
+$('themeMode').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  theme = b.dataset.k; store.set('weather:theme', theme); renderTheme(); applyTheme(); renderCompare();
+});
+darkMQ?.addEventListener?.('change', ()=>{ applyTheme(); renderCompare(); });
+// 하늘(날씨)이 바뀔 때마다 머리 영역 글자·칩 색을 맞춰요
+new MutationObserver(applyTheme).observe(document.body, {attributes:true, attributeFilter:['data-sky']});
+
 /* ---------- 설정 창 ---------- */
 let startMode = store.get('weather:start', 'pick');   // 'gps' 내 위치 | 'pick' 고른 지역
 function renderStart(){
@@ -2416,7 +2461,7 @@ if('serviceWorker' in navigator && (location.protocol==='https:' || location.hos
 
 /* ---------- 시작 ---------- */
 applyLayout(); renderUnitList(); renderUnits(); renderCmpControls(); renderOutfitTabs(); initCommuteSettings(); renderKmaSettings(); renderCmpPick(); renderRain();
-renderStart();
+renderStart(); renderTheme(); applyTheme();
 const savedPlace = refreshPlace(store.get('weather:place', null));
 const openSaved = () => {
   if(savedPlace && savedPlace.lat!=null){ mainPicker.set(savedPlace.sel); load(savedPlace); }

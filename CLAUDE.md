@@ -31,7 +31,7 @@
 - 설정 UI는 모두 `<dialog id="setDlg">` 안(`.setBlock`). 본문 카드는 `#updated`(바닥글) 앞에 배치됨
 - 본문 카드는 `<section data-unit="...">`. 순서/숨김은 `UNITS`, `layout`, `applyLayout()`이 관리.
   새 카드를 추가하면 `UNITS`에도 넣을 것 (저장된 배치가 있으면 맨 뒤에 자동 추가됨)
-- 색은 모두 `:root` CSS 변수 + `@media (prefers-color-scheme: dark)` 재정의. 하늘 배경은 `body[data-sky]`
+- 색은 모두 `:root` CSS 변수. 다크는 `@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) }`와 `:root[data-theme="dark"]` **두 곳 모두** 고칠 것(설정 '화면 테마'). 하늘 배경은 `body[data-sky]`, 머리 영역 어두운 칩은 `body.skyDark`
 - 주아체(Jua)는 굵기가 하나뿐 → Jua 쓰는 요소에 `font-weight:600` 주지 말 것
 - 브라우저 저장소 키는 모두 `weather:` 접두사 (NOTES.md 참고)
 
