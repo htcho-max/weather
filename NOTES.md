@@ -2,7 +2,7 @@
 
 - 형태: 단일 HTML/JS + PWA 파일, 외부 라이브러리 없음(달 계산용 SunCalc만 코드에 포함)
 - 데이터: Open-Meteo (예보·대기질·과거 기록), 기상청 단기예보 조회서비스(선택, 중계 서버 경유), 행정안전부 행정동 경계(2026.2, vuski/admdongkor)에서 뽑은 좌표
-- 배포 계획: GitHub Pages (휴대폰 위치 권한·PWA가 https에서만 동작하기 때문)
+- 배포: GitHub Pages https://htcho-max.github.io/weather/ (휴대폰 위치 권한·PWA가 https에서만 동작하기 때문)
 
 ## 기능
 - 지역 선택: 시/도 → 시/군/구 → 읍/면/동 드롭다운, 해외(나라 → 도시), 내 위치(가장 가까운 동 자동 선택), 즐겨찾기(☆)
@@ -65,7 +65,8 @@ actual:{위도,경도}, down:{모델ID}
 - 이 프로젝트는 지금까지 가짜 데이터로만 자동 테스트함. 실제 응답 형태 차이는 사용자 확인으로 고쳐 옴
 
 ## 다음 할 일
-1. GitHub Pages에 이 폴더 파일 올리기 (사용자가 집에서 진행 예정). `worker/`, `tools/`, `screenshots/`는 올리지 않아도 됨
+1. ~~GitHub 업로드~~ 완료(2026-10-28): 저장소 https://github.com/htcho-max/weather, 앱 주소 https://htcho-max.github.io/weather/
+   - Pages 설정(main / root) 확인, 휴대폰에서 내 위치·홈 화면 추가 확인 필요. zip·screenshots는 .gitignore로 제외
 2. 기상청 인증키 발급 + Worker 배포 + 앱 설정에 주소 저장 (`worker/설정방법.md`) → 실제 응답으로 확인하고 어긋나는 점 고치기
    - 확인할 것: 단기예보 범위(오늘~글피?), 오늘 TMX/TMN이 늦은 발표에 빠지는지, 관측 시각 표시
 3. 후보: 초단기예보(6시간, 10분 단위 갱신)로 24시간 카드 앞부분 보강, 기상특보(기상청 특보 조회서비스),
