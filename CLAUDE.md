@@ -13,11 +13,11 @@
 ## 파일
 | 파일 | 내용 |
 |---|---|
-| `index.html` | 앱 전체. 약 2,090줄 |
-| `sw.js` | 서비스 워커. 앱 화면은 네트워크 우선, 아이콘은 캐시 우선, 글꼴은 stale-while-revalidate. API 요청은 건드리지 않음. 아이콘을 바꾸면 `VERSION`을 올릴 것 |
+| `index.html` | 앱 전체. 약 2,330줄 |
+| `sw.js` | 서비스 워커. 앱 화면은 네트워크 우선, 아이콘은 캐시 우선, 글꼴은 stale-while-revalidate. API 요청은 건드리지 않음. 출퇴근 비 알림 push·notificationclick 처리. 아이콘을 바꾸면 `VERSION`을 올릴 것 |
 | `manifest.webmanifest` | 앱 이름 "하늘", 테마색 #a8d4ff |
 | `icon-192/512.png`, `icon-maskable-512.png`, `apple-touch-icon.png` | 웃는 해 마스코트 아이콘 |
-| `worker/kma-worker.js`, `wrangler.toml`, `설정방법.md` | 기상청 중계 서버(Cloudflare Worker)와 사용자용 설정 안내 |
+| `worker/kma-worker.js`, `wrangler.toml`, `설정방법.md` | 기상청 중계 서버(Cloudflare Worker: 관측·초단기·단기예보·특보·웹 푸시 알림)와 사용자용 설정 안내. 실제 배포본은 사용자가 대시보드에 붙여넣음 → 코드 바꾸면 다시 붙여넣기 안내 |
 | `tools/build_regions.py` | 행정구역 데이터(REGIONS) 다시 만들기 |
 | `tools/mock.js`, `tools/test.py` | 가짜 API로 화면·동작 확인 (Playwright) |
 
@@ -26,7 +26,7 @@
   `grep -n`, 줄 범위 지정 읽기로 필요한 부분만 볼 것. 수정할 때도 이 줄은 건드리지 말 것
 - 구조(위→아래): `<head>`(글꼴: 구글 Jua + jsDelivr Pretendard) → `<style>`(파스텔 다꾸 디자인) → 본문 섹션들
   → `<script>`: REGIONS → 공통 유틸(store, 단위, wmo, icon, buddy 마스코트) → fetchPlace → makePicker
-  → 즐겨찾기 → load(메인) → 옷차림·공기·해·24시간·7일 → 모델 비교 → 기상청 공식(loadKma·renderObs·kmaSeries·설정) → 다른 지역 비교 → SunCalc(달 계산, BSD)
+  → 즐겨찾기 → load(메인) → 옷차림·공기·해·24시간·7일 → 모델 비교(기관 고르기 cmpOff) → 기상청 공식(loadKma·renderObs·초단기·특보 loadWarn·kmaSeries·설정) → 비 알림(rain*) → 공유 이미지(makeShareImage) → 다른 지역 비교 → SunCalc(달 계산, BSD)
   → 현지시각·평년·출퇴근·생활지수·달·성적표·주말 → 단위 → 화면 구성(카드 순서) → 서비스워커 등록 → 시작
 - 본문 카드는 `<section data-unit="...">`. 순서/숨김은 `UNITS`, `layout`, `applyLayout()`이 관리.
   새 카드를 추가하면 `UNITS`에도 넣을 것 (저장된 배치가 있으면 맨 뒤에 자동 추가됨)
@@ -39,5 +39,6 @@
 pip install playwright && python -m playwright install chromium
 python tools/test.py            # 가짜 API로 열어서 화면 캡처 + 오류 확인 (screenshots/ 생성, kma.png는 기상청 연결 상태)
 node --input-type=module -e "import w from './worker/kma-worker.js'; console.log(w._test.toGrid(37.5665,126.978))"   # {nx:60, ny:127}
+# Worker의 특보 매칭·비 판단·푸시 암호화는 w._test로 직접 확인 가능 (암호화는 npm http_ece로 복호화해 검증했음)
 ```
 실제 API 호출 확인은 사용자가 브라우저에서 직접 열어 보는 방식으로 해 왔음.

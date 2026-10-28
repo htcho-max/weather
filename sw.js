@@ -2,7 +2,8 @@
 // - 앱 화면(index.html)은 항상 새 버전을 먼저 확인하고, 인터넷이 없으면 저장해 둔 화면을 보여줘요.
 // - 아이콘 등은 저장해 둔 것을 바로 써요. 아이콘을 바꿨다면 아래 VERSION 숫자를 올려 주세요.
 // - 날씨 데이터 요청은 건드리지 않아요. (마지막 날씨는 앱이 따로 기억해요)
-const VERSION = 'haneul-v1';
+// - 출퇴근 비 알림: 중계 서버가 보낸 푸시를 알림으로 띄우고, 누르면 앱을 열어요.
+const VERSION = 'haneul-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net'];
 
@@ -50,4 +51,23 @@ self.addEventListener('fetch', e => {
       })
     );
   }
+});
+
+// 출퇴근 비 알림
+self.addEventListener('push', e => {
+  let m = {};
+  try { m = e.data ? e.data.json() : {}; } catch (err) { m = { body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(m.title || '하늘 날씨 알림', {
+    body: m.body || '', tag: m.tag || 'haneul', renotify: true,
+    icon: './icon-192.png', badge: './icon-192.png', data: { url: m.url || './' },
+  }));
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || './', self.registration.scope).href;
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const open = list.find(c => c.url.startsWith(self.registration.scope));
+    return open ? open.focus() : clients.openWindow(url);
+  }));
 });

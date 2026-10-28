@@ -13,7 +13,11 @@ window.fetch=(u)=>{ __calls.push(u);
  if(window.__offline) return Promise.reject(new TypeError('Failed to fetch'));
  // 기상청 중계 서버(worker/kma-worker.js) 흉내: 주소에 /now?, /fcst? 가 들어가면
  if(window.__kmaFail && /\/(now|fcst)\?/.test(u)) return J({ok:false,error:window.__kmaFail});
- if(u.includes('/now?')) return J({ok:true,nx:60,ny:127,base:nowT.slice(0,11)+String(Math.max(0,+nowT.slice(11,13)-1)).padStart(2,'0')+':00',obs:{t:14.6,rh:62,wind:1.4,vec:250,rain1h:0,pty:window.__kmaPty||0}});
+ if(u.includes('/now?')) return J({ok:true,nx:60,ny:127,base:nowT.slice(0,11)+String(Math.max(0,+nowT.slice(11,13)-1)).padStart(2,'0')+':00',obs:{t:14.6,rh:62,wind:1.4,vec:250,rain1h:0,pty:window.__kmaPty||0},
+  ultra:{base:nowT.slice(0,14)+'30',time:[1,2,3,4,5,6].map(i=>new Date(Date.parse(nowT+':00Z')+i*3600e3).toISOString().slice(0,13)+':00'),t:[15,15.5,16,15,14,13],rain:[0,0,0,0.5,1,0],sky:[1,1,3,4,4,4],pty:[0,0,0,1,1,0],reh:[60,60,60,70,80,80],wsd:[1,1,2,2,3,3],lgt:[0,0,0,0,0,0]}});
+ if(u.includes('/warn?')) return J(window.__warn||{ok:true,tmFc:today+'T10:00',active:[{name:'건조주의보',part:false},{name:'강풍주의보',part:true}],prelim:['(1) 강풍 예비특보 : 10월 30일 새벽(00시~06시) : 서울, 인천, 경기도'],nation:3});
+ if(u.includes('/push/key')) return J({ok:true,key:'BKxx'});
+ if(/\/push\/(subscribe|unsubscribe|test)/.test(u)) return J({ok:true,alertHour:7,status:201});
  if(u.includes('/fcst?')){const t=[];for(let i=0;i<70;i++)t.push(new Date(Date.parse(nowT+':00Z')+i*3600e3).toISOString().slice(0,13)+':00');
   const ds=[...new Set(t.map(x=>x.slice(0,10)))];
   return J({ok:true,nx:60,ny:127,base:today+'T11:00',hourly:{time:t,tmp:t.map((_,i)=>12+4*Math.sin(i/4)),pop:t.map(()=>20),pcp:t.map((_,i)=>i===30?1:0),sno:t.map(()=>0),sky:t.map(()=>3),pty:t.map(()=>0),reh:t.map(()=>60),wsd:t.map(()=>2.5)},

@@ -36,6 +36,23 @@
   - 3시간 간격인 날은 '24시간이 다 있는 날' 조건에 걸려 강수 합·최대 풍속이 비어 있음(최고·최저는 TMX/TMN으로 나옴). 3시간 간격 PCP가 3시간 누적인지 확인되면 합계 계산 추가 가능
   - 설정 순서: `worker/설정방법.md`
 
+## 2026-10-28 추가 기능 (2차)
+- **기관 고르기**: 비교 카드 '기관 고르기'(details)에서 9개 기관(기상청 공식 포함) 켜기/끄기, `weather:cmpOff` 저장.
+  끈 기관은 Open-Meteo 요청에서 빠지고(`ACTIVE`), 그래프·표·성적표·옷차림 우산 판단(`cmpAll()`)에서도 빠짐. 세계 기관은 최소 1개 유지.
+  범례 클릭은 예전처럼 잠깐 숨기기(저장 안 함)
+- **초단기예보**: Worker `/now`에 `ultra`(getUltraSrtFcst, 매시 30분 발표·45분 이후, 6시간) 포함. 24시간 카드의 '지금'은 관측값,
+  다음 6시간은 기온·하늘(SKY/PTY/LGT→kind)을 기상청 값으로 바꾸고 경계 점선 + 안내 문구. 강수확률 막대는 모델 값
+- **기상특보**: Worker `/warn?sido&sigungu` (WthrWrnInfoService/getPwnStatus의 t6 발효 현황 글을 줄·괄호 단위로 읽어 시/도·시/군 이름으로 매칭,
+  광역시 권역은 '일부 지역'). t7(예비특보)은 시/도 이름이 들어간 줄만. 하늘 영역 위 `#warn` 띠. **별도 활용신청 필요**.
+  글 형식은 아직 실제 응답으로 확인 못 함 → 특보가 있는 날 실제 /warn 응답 확인 필요
+- **출퇴근 비 알림**: Worker가 VAPID 키를 KV(`PUSH`)에 자동 생성, `/push/subscribe|unsubscribe|test`, cron(매시 5분)으로
+  평일 '출근 1시간 전'인 구독만 단기예보 확인(출근·퇴근 시각과 그다음 1시간, PTY>0·PCP>0·POP≥60) → 비/눈일 때만 RFC 8291 암호화 푸시.
+  404/410이면 구독 삭제. 앱: 설정 '출퇴근길 비 알림 받기'(`weather:rainAlert`), 시험 알림, 지역 바꾸기, 출퇴근 시각 바꾸면 재등록.
+  sw.js에 push·notificationclick 추가(VERSION v2). 검증: http_ece로 복호화 확인, JWT 서명 확인, 가짜 KV로 cron 흐름 확인. 실제 푸시 서비스로는 미확인
+  - 한계: 출근 0시면 전날 23시에 '오늘' 날짜로 확인함(드묾). 주말 미발송
+- **공유 이미지**: 하늘 영역 '공유' 버튼 → 1080×1350 canvas(지역·날짜·기온·마스코트·체감 등 4칸·옷차림·특보) →
+  `navigator.share(files)` 가능하면 공유 시트(카톡), 아니면 PNG 저장. 화면에 보이는 값(관측 반영)을 그대로 씀
+
 ## 예보 모델 비교
 - 모델: kma_seamless(한국, 대체 kma_gdps·kma_ldps), ecmwf_ifs025, gfs_seamless, jma_seamless, icon_seamless,
   ukmo_seamless, meteofrance_seamless, gem_seamless
@@ -56,7 +73,7 @@
 - 저장된 장소는 `sel`(드롭다운 인덱스)로 최신 좌표를 다시 계산(`refreshPlace`)
 
 ## 브라우저 저장소 키 (모두 localStorage, `weather:` 접두사)
-place, rcPlace, favs, units, commute, layout, kma, cache:{위도,경도}, cacheIdx, normals:{위도,경도}, log:{위도,경도},
+place, rcPlace, favs, units, commute, layout, kma, cmpOff, rainAlert, cache:{위도,경도}, cacheIdx, normals:{위도,경도}, log:{위도,경도},
 actual:{위도,경도}, down:{모델ID}
 
 ## 디자인
@@ -69,10 +86,10 @@ actual:{위도,경도}, down:{모델ID}
 - 이 프로젝트는 지금까지 가짜 데이터로만 자동 테스트함. 실제 응답 형태 차이는 사용자 확인으로 고쳐 옴
 
 ## 다음 할 일
-1. ~~GitHub 업로드~~ 완료(2026-10-28): 저장소 https://github.com/htcho-max/weather, 앱 주소 https://htcho-max.github.io/weather/
-   - 배포 방식: GitHub Actions(`.github/workflows/pages.yml`) — main에 push하면 앱 파일(index.html, sw.js, manifest, png)만 올림. 배포 확인 완료
-   - 휴대폰에서 내 위치·홈 화면 추가 확인 필요. zip·screenshots는 .gitignore로 제외
+1. ~~GitHub 업로드~~ 완료: 저장소 https://github.com/htcho-max/weather, 앱 https://htcho-max.github.io/weather/
+   - 배포: GitHub Actions(`.github/workflows/pages.yml`) — main에 push하면 앱 파일(index.html, sw.js, manifest, png)만 올림
    - 새 파일을 앱에 추가하면 pages.yml의 cp 줄에도 넣을 것
-2. ~~기상청 인증키 + Worker 배포 + 앱 연결~~ 완료(2026-10-28). 관측 줄·비교 카드 '기상청 공식' 동작 확인
-3. 후보: 초단기예보(6시간, 10분 단위 갱신)로 24시간 카드 앞부분 보강, 기상특보(기상청 특보 조회서비스),
-   오늘 날씨 공유 이미지(카톡), 출퇴근 비 알림(Worker cron + 웹 푸시)
+2. ~~기상청 인증키 + Worker 배포 + 앱 연결~~ 완료(2026-10-28)
+3. 2차 기능 실사용 확인: Worker 코드 다시 붙여넣기, 기상특보 활용신청, KV(PUSH)·Cron 설정(`worker/설정방법.md` 4~6단계)
+   → 특보 있는 날 /warn 응답 형식 확인, 휴대폰 시험 알림 확인
+4. 후보: 3시간 간격 날 강수 합계, 특보 구역 정확 매칭(getPwnCd 구역 코드), 주말 알림 선택, 알림 시각 직접 고르기
