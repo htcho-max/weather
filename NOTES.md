@@ -30,7 +30,11 @@
     강수 합·최대 풍속은 24시간이 다 있는 날만. 성적표에도 `kma_official`로 기록
   - 캐시: 지역 캐시에 kmaNow(3시간)·kmaFcst(6시간) 함께 저장. 실패 시 모델 값 + 이유 문구
 - 가짜 테스트: mock.js가 `/now?`, `/fcst?` 흉내, `window.__kmaFail='문구'`로 실패 흉내. test.py 세 번째 화면(kma.png)이 연결 상태
-- 실제 API로는 아직 확인 못 함 (사용자가 키 발급·Worker 배포 후 확인 필요). 설정 순서: `worker/설정방법.md`
+- 실제 API 확인 완료(2026-10-28 21:47, 서울 60,127): Worker https://haneul-kma.*.workers.dev (변수는 '프로덕션'에 넣어야 함, 프리뷰 아님)
+  - /now: 21시 자료, 7.1°C 등 정상
+  - /fcst: 20시 발표. 모레까지는 1시간 간격, 그 뒤(글피~그글피 0시)는 3시간 간격. 오늘 TMX/TMN은 20시 발표에 없음(null) → 비교표 오늘 칸 '–'
+  - 3시간 간격인 날은 '24시간이 다 있는 날' 조건에 걸려 강수 합·최대 풍속이 비어 있음(최고·최저는 TMX/TMN으로 나옴). 3시간 간격 PCP가 3시간 누적인지 확인되면 합계 계산 추가 가능
+  - 설정 순서: `worker/설정방법.md`
 
 ## 예보 모델 비교
 - 모델: kma_seamless(한국, 대체 kma_gdps·kma_ldps), ecmwf_ifs025, gfs_seamless, jma_seamless, icon_seamless,
@@ -66,8 +70,9 @@ actual:{위도,경도}, down:{모델ID}
 
 ## 다음 할 일
 1. ~~GitHub 업로드~~ 완료(2026-10-28): 저장소 https://github.com/htcho-max/weather, 앱 주소 https://htcho-max.github.io/weather/
-   - Pages 설정(main / root) 확인, 휴대폰에서 내 위치·홈 화면 추가 확인 필요. zip·screenshots는 .gitignore로 제외
-2. 기상청 인증키 발급 + Worker 배포 + 앱 설정에 주소 저장 (`worker/설정방법.md`) → 실제 응답으로 확인하고 어긋나는 점 고치기
-   - 확인할 것: 단기예보 범위(오늘~글피?), 오늘 TMX/TMN이 늦은 발표에 빠지는지, 관측 시각 표시
+   - 배포 방식: GitHub Actions(`.github/workflows/pages.yml`) — main에 push하면 앱 파일(index.html, sw.js, manifest, png)만 올림. 배포 확인 완료
+   - 휴대폰에서 내 위치·홈 화면 추가 확인 필요. zip·screenshots는 .gitignore로 제외
+   - 새 파일을 앱에 추가하면 pages.yml의 cp 줄에도 넣을 것
+2. ~~기상청 인증키 + Worker 배포~~ 완료, Worker 응답 확인 완료. 앱 설정에 주소 저장 후 휴대폰 화면 확인
 3. 후보: 초단기예보(6시간, 10분 단위 갱신)로 24시간 카드 앞부분 보강, 기상특보(기상청 특보 조회서비스),
    오늘 날씨 공유 이미지(카톡), 출퇴근 비 알림(Worker cron + 웹 푸시)

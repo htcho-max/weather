@@ -5,7 +5,8 @@
 
 ## 한눈에
 - 빌드 도구 없는 정적 웹앱. `index.html` 한 파일에 HTML·CSS·JS가 모두 들어 있음
-- PWA: `manifest.webmanifest`, `sw.js`, 아이콘 4개. GitHub Pages(https)에 그대로 올려 사용 예정
+- PWA: `manifest.webmanifest`, `sw.js`, 아이콘 4개. https://htcho-max.github.io/weather/ (저장소 htcho-max/weather)
+- 배포: main에 push → GitHub Actions(`.github/workflows/pages.yml`)가 앱 파일만 골라 Pages에 올림. 앱에 새 파일을 추가하면 이 파일의 cp 줄도 고칠 것
 - 데이터: Open-Meteo 무료 API (키 없음) + 선택 사항으로 기상청 공식 데이터(중계 서버 `worker/kma-worker.js`, 설정에 주소 저장)
 - 사용자는 한국어 사용자. UI 문구·주석 모두 한국어, 존댓말 '-요'체
 

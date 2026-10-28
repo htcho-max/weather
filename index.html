@@ -951,7 +951,7 @@ function renderCompare(){
   $('legend').innerHTML = [...data].sort((a,b)=>!!b.daily-!!a.daily).map(m=> m.daily
     ? `<li><button type="button" data-id="${m.id}" aria-pressed="${!cmp.hidden.has(m.id)}"><i style="background:${m.color}"></i>${m.name}${m.used&&m.used!==m.id?` (${m.used.split('_').pop().toUpperCase()})`:''}${m.filled?'*':''}</button></li>`
     : `<li class="fail" title="${(m.why||'').replace(/"/g,'')}">${m.name}: 예보 없음${m.why?` (${m.why.length>60?m.why.slice(0,60)+'…':m.why})`:''}</li>`).join('')
-    + (data.some(m=>m.official) ? `<li class="fail">기상청 공식: 단기예보라 약 3~4일까지만 있어요 (${kma.fcst.base.slice(8,10)}일 ${+kma.fcst.base.slice(11,13)}시 발표)</li>` : '')
+    + (data.some(m=>m.official) ? `<li class="fail">기상청 공식: 단기예보라 약 4~5일 뒤까지만 있고, 오늘 최고·최저는 오전 발표에만 들어 있어요 (${kma.fcst.base.slice(8,10)}일 ${+kma.fcst.base.slice(11,13)}시 발표)</li>` : '')
     + (data.some(m=>m.daily && m.filled) ? `<li class="fail">* 일별 값이 비어 있어 시간별 예보로 계산했어요</li>` : '');
   $('legend').querySelectorAll('button').forEach(b=>b.onclick=()=>{ cmp.hidden.has(b.dataset.id)?cmp.hidden.delete(b.dataset.id):cmp.hidden.add(b.dataset.id); renderCompare(); });
 
