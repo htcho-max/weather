@@ -1,0 +1,11 @@
+# Cloudflare Workers 설정 (wrangler CLI로 올릴 때만 필요해요. 대시보드에서 붙여넣기로 만들면 없어도 돼요)
+name = "haneul-kma"
+main = "kma-worker.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# 앱 주소를 쉼표로 적으면 그 사이트에서만 부를 수 있어요. 비워 두면 모두 허용.
+ALLOWED_ORIGINS = ""
+
+# 인증키는 여기에 적지 말고 아래 명령으로 비밀 값으로 넣어 주세요.
+#   npx wrangler secret put KMA_KEY

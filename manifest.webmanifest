@@ -1,0 +1,16 @@
+{
+  "name": "하늘 - 귀여운 날씨",
+  "short_name": "하늘",
+  "description": "날씨 친구와 함께 보는 오늘의 날씨, 옷차림, 예보 비교",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f4ff",
+  "theme_color": "#a8d4ff",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

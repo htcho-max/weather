@@ -1,0 +1,8 @@
+# 압축 원본·테스트 캡처는 올리지 않아요
+*.zip
+screenshots/
+__pycache__/
+# Worker 로컬 설정·비밀 값
+.dev.vars
+.wrangler/
+node_modules/
