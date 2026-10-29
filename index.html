@@ -279,11 +279,48 @@ body.skyDark .obsTag{background:rgba(255,255,255,.16)}
 .foot a{color:inherit}
 .stale{margin:12px 0 0;font-size:14px;text-align:center;background:rgba(255,255,255,.55);color:#3d3459;border-radius:999px;padding:6px 14px}
 body.skyDark .stale{background:rgba(255,255,255,.18);color:inherit}
-@media (prefers-reduced-motion:reduce){.sky{transition:none}.buddy{animation:none}}
+@media (prefers-reduced-motion:reduce){.sky{transition:none}.buddy{animation:none}.fx{display:none}}
+/* 간단 보기 */
+.answers{display:none;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.answers div{background:rgba(255,255,255,.62);border-radius:20px;padding:10px 6px 9px;text-align:center;font-size:13.5px;line-height:1.35}
+body.skyDark .answers div{background:rgba(255,255,255,.14)}
+.answers .ai{display:block;font-size:30px;line-height:1.15}
+.answers b{display:block;font-family:"Jua",inherit;font-weight:400;font-size:16.5px;margin:2px 0 1px}
+.simpleMore{display:none;margin:18px auto 0;text-align:center}
+.simpleMore .wearCard{text-align:left;background:var(--surface);border-radius:22px;padding:14px 16px;border:2px solid var(--outline);box-shadow:var(--shadow);margin-bottom:18px}
+.simpleMore .wearCard small{display:block;color:var(--warm);font-family:"Jua",inherit;font-size:15px}
+.simpleMore .wearCard p{margin:4px 0 0;font-size:17px}
+.viewBtn{font:inherit;font-family:"Jua",inherit;font-size:17px;padding:11px 26px;border-radius:999px;border:0;background:var(--lilac);color:#3d3459;cursor:pointer;box-shadow:0 3px 0 #a993e6}
+.viewBtn:active{transform:translateY(2px);box-shadow:0 1px 0 #a993e6}
+.backSimple{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:5;display:none;font-size:15px;padding:9px 20px}
+body.simple .answers{display:grid}
+body.simple #yday,body.simple #normal,body.simple #obs,body.simple #facts,body.simple #clock{display:none!important}
+body.simple main > section{display:none!important}
+body.simple .simpleMore{display:block}
+body.canSimple:not(.simple) .backSimple{display:inline-block}
+/* 오늘 남은 하늘 */
+.later{margin-top:12px;background:rgba(255,255,255,.45);border-radius:20px;padding:10px 12px}
+body.skyDark .later{background:rgba(255,255,255,.12)}
+.rainLine{margin:0;font-size:15.5px;line-height:1.45}
+.laterRow{display:flex;align-items:center;gap:4px;overflow-x:auto;margin-top:8px;padding-bottom:2px;scrollbar-width:none}
+.laterRow::-webkit-scrollbar{display:none}
+.laterRow .chip{flex:none;display:flex;align-items:center;gap:3px;font-size:14px;padding:2px 10px 2px 3px;border-radius:999px;background:rgba(255,255,255,.6)}
+body.skyDark .laterRow .chip{background:rgba(255,255,255,.14)}
+.laterRow .chip b{font-family:"Jua",inherit;font-weight:400;margin-right:2px}
+.laterRow .arrow{flex:none;opacity:.55;font-size:13px}
+/* 비·눈 내리는 효과 */
+.fx{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.fx i{position:absolute;top:-30px;display:block}
+.fx.rain i{width:2px;height:18px;border-radius:2px;background:linear-gradient(transparent,var(--drop,rgba(70,100,170,.45)));animation:fxRain linear infinite}
+.fx.snow i{width:7px;height:7px;border-radius:50%;background:var(--flake,rgba(255,255,255,.95));box-shadow:0 0 3px rgba(80,90,140,.25);animation:fxSnow linear infinite}
+body.skyDark .fx{--drop:rgba(255,255,255,.5);--flake:rgba(255,255,255,.9)}
+@keyframes fxRain{to{transform:translate(-40px,760px)}}
+@keyframes fxSnow{0%{transform:translate(0,0)}25%{transform:translate(14px,190px)}50%{transform:translate(-8px,380px)}75%{transform:translate(12px,570px)}100%{transform:translate(0,760px)}}
 </style>
 </head>
 <body data-sky="clear-day">
 <header class="sky">
+  <div class="fx" id="fx" aria-hidden="true"></div>
   <div class="wrap">
     <div class="topBar">
       <div class="favs" id="favs" aria-label="즐겨찾는 지역"></div>
@@ -304,11 +341,17 @@ body.skyDark .stale{background:rgba(255,255,255,.18);color:inherit}
       <div class="bigicon" id="bigicon"></div>
     </div>
     <div class="facts" id="facts"></div>
+    <div class="answers" id="answers" aria-label="오늘 챙길 것"></div>
+    <div class="later" id="later" hidden></div>
     <p class="stale" id="stale" role="status" hidden></p>
   </div>
 </header>
 
 <main class="wrap">
+  <div class="simpleMore" id="simpleMore">
+    <div class="wearCard"><small id="simpleWearT">오늘 뭐 입지</small><p id="simpleWear"></p></div>
+    <button type="button" class="viewBtn" id="toDetail">자세히 보기 ↓</button>
+  </div>
   <section data-unit="commute" id="commuteSec">
     <h2>출퇴근길</h2>
     <div id="commute"><p class="status">불러오는 중</p></div>
@@ -372,6 +415,7 @@ body.skyDark .stale{background:rgba(255,255,255,.18);color:inherit}
   <p class="foot">날씨·대기질: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · 행정구역: 행정안전부 행정동 경계(2026.2) · 미세먼지 등급: 환경부 기준<span id="kmaFoot" hidden> · 관측·단기예보: 기상청(공공데이터포털)</span></p>
 </main>
 
+<button type="button" class="viewBtn backSimple" id="toSimple">▲ 간단히 보기</button>
 <dialog class="sheet" id="setDlg" aria-labelledby="setTitle">
   <div class="sheetHead"><h2 id="setTitle">⚙️ 설정</h2><button type="button" id="closeSet">닫기</button></div>
   <div class="sheetBody">
@@ -379,6 +423,13 @@ body.skyDark .stale{background:rgba(255,255,255,.18);color:inherit}
     <h3>처음 보여줄 지역</h3>
     <div class="chips" id="startMode" role="group" aria-label="처음 보여줄 지역"></div>
     <p class="note" id="startNote" style="margin-top:0"></p>
+  </div>
+  <div class="setBlock" id="setView">
+    <h3>첫 화면</h3>
+    <div class="chips" id="viewMode" role="group" aria-label="첫 화면"></div>
+    <p class="note" style="margin-top:0">간단 보기는 지금 날씨와 꼭 필요한 답 세 가지만 크게 보여줘요. ‘자세히 보기’를 누르면 모든 카드가 나와요.</p>
+    <h3 style="font-size:15.5px;margin:14px 0 8px">간단 보기에 넣을 것 <small>세 개까지</small></h3>
+    <div class="chips" id="simplePick" role="group" aria-label="간단 보기에 넣을 것"></div>
   </div>
   <div class="setBlock" id="setPlace">
     <h3>지역 고르기</h3>
@@ -553,7 +604,7 @@ const grade = (v, t) => t.find(g => v <= g[0]);
 async function fetchPlace(place){
   const wxUrl = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}`
     + `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day,precipitation`
-    + `&hourly=temperature_2m,apparent_temperature,weather_code,precipitation_probability,is_day,uv_index,relative_humidity_2m,wind_speed_10m`
+    + `&hourly=temperature_2m,apparent_temperature,weather_code,precipitation_probability,precipitation,is_day,uv_index,relative_humidity_2m,wind_speed_10m,wind_direction_10m`
     + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,daylight_duration,uv_index_max,wind_speed_10m_max`
     + `&timezone=auto&past_days=1&forecast_days=7&wind_speed_unit=ms`;
   const aqUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${place.lat}&longitude=${place.lon}`
@@ -764,7 +815,7 @@ function renderMain(){
     .map(([k,v])=>`<div>${k}<b>${v}</b></div>`).join('');
   $('updated').textContent = `${+c.time.slice(5,7)}월 ${+c.time.slice(8,10)}일 ${c.time.slice(11,16)} 기준 (현지 시각)`;
   renderObs(); renderWarn(); renderRain();
-  renderClock(); renderNormal(); renderCommute(); renderOutfit(); renderAir(); renderSun(); renderMoon(); renderHourly(); renderWeek(); renderRegion(); scheduleWeekend(); loadScore();
+  renderClock(); renderNormal(); renderCommute(); renderOutfit(); renderAir(); renderSun(); renderMoon(); renderHourly(); renderWeek(); renderRegion(); scheduleWeekend(); loadScore(); renderSimple();
 }
 
 /* ---------- 옷차림 ---------- */
@@ -855,39 +906,130 @@ function renderSun(){
 
 /* ---------- 24시간, 7일 ---------- */
 function renderHourly(){
-  const d = main.wx, h = d.hourly, start = d.h0;
-  const n = 24, step = 46, W = n*step, H = 190, top = 46, bottom = 120;
-  const U = ultraFresh();
-  const ui = t => U ? U.time.indexOf(t) : -1;
-  const temps = h.temperature_2m.slice(start, start+n).map((v,i)=>{
-    if(i===0 && obsFresh()) return obsFresh().obs.t ?? v;
-    const j = ui(h.time[start+i]); return j>=0 && U.t[j]!=null ? U.t[j] : v; });
-  let kmaCols = 0;
+  const d = main.wx, h = d.hourly, start = d.h0, n = 24, step = 50;
+  const W = n*step, H = 272, top = 44, bottom = 112, ICON = 120, RAIN = 196, WIND = 218;
+  const O = obsFresh();
+  const hrs = Array.from({length:n}, (_,i)=>hourAt(start+i)).filter(x=>x.t);
+  if(!hrs.length) return;
+  // 지금 칸은 관측값으로
+  if(O){ hrs[0] = {...hrs[0], temp:O.obs.t ?? hrs[0].temp, mm:O.obs.rain1h ?? hrs[0].mm, wind:O.obs.wind ?? hrs[0].wind, dir:O.obs.vec ?? hrs[0].dir, src:'o'}; }
+  if(main.look) hrs[0].kind = main.look.kind;
+  const temps = hrs.map(x=>x.temp);
   const min = Math.min(...temps), max = Math.max(...temps), span = Math.max(max-min, 1);
   const pts = temps.map((t,i)=>[i*step+step/2, bottom - (t-min)/span*(bottom-top)]);
   let path = `M${pts[0][0]},${pts[0][1]}`;
   for(let i=1;i<pts.length;i++){ const [x0,y0]=pts[i-1],[x1,y1]=pts[i], cx=(x0+x1)/2; path += ` C${cx},${y0} ${cx},${y1} ${x1},${y1}`; }
-  const area = `${path} L${pts.at(-1)[0]},${H-40} L${pts[0][0]},${H-40} Z`;
-  let cols = '';
-  for(let i=0;i<n;i++){
-    const k = start+i, x = i*step+step/2;
-    let [, kind] = wmo(h.weather_code[k]);
-    const pop = h.precipitation_probability[k] ?? 0;
-    const j = ui(h.time[k]);
-    if(j>=0){ kind = ultraKind(U, j) || kind; kmaCols++; }
-    cols += `<text x="${x}" y="${pts[i][1]-12}" text-anchor="middle" font-size="14.5" font-weight="600" fill="var(--ink)">${deg(temps[i])}</text>`;
-    if(i%2===0) cols += `<g transform="translate(${x-12} ${H-38})">${icon(kind, h.is_day[k]===1, 24)}</g>`;
-    if(pop>0) cols += `<rect x="${x-3}" y="${H-46-pop*0.2}" width="6" height="${pop*0.2}" rx="2" fill="var(--sky)"/>`;
-    cols += `<text x="${x}" y="${H-2}" text-anchor="middle" font-size="13.5" fill="var(--muted)">${i===0?'지금':h.time[k].slice(11,13)+'시'}</text>`;
-  }
-  if(kmaCols) cols += `<line x1="${(kmaCols+1)*step}" x2="${(kmaCols+1)*step}" y1="${top-30}" y2="${H-20}" stroke="var(--m9)" stroke-opacity=".45" stroke-dasharray="3 5"/><text x="${(kmaCols+1)*step-6}" y="${top-30}" text-anchor="end" font-size="12.5" fill="var(--muted)">기상청</text>`;
-  $('hourlyNote').hidden = !(kmaCols || obsFresh());
-  $('hourlyNote').textContent = kmaCols ? `지금과 앞으로 ${kmaCols}시간은 기상청 관측·초단기예보, 그 뒤는 예보 모델 값이에요.` : '지금 기온은 기상청 관측값이에요.';
-  $('hourly').innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="앞으로 24시간 기온 변화">
+  const area = `${path} L${pts.at(-1)[0]},${ICON-4} L${pts[0][0]},${ICON-4} Z`;
+  let cols = `<line x1="0" x2="${W}" y1="${RAIN}" y2="${RAIN}" stroke="var(--line)"/>`;
+  hrs.forEach((o,i)=>{
+    const x = i*step+step/2;
+    cols += `<text x="${x}" y="${pts[i][1]-12}" text-anchor="middle" font-size="14.5" font-weight="600" fill="var(--ink)">${deg(o.temp)}</text>`;
+    cols += `<g transform="translate(${x-13} ${ICON})">${icon(o.kind, o.isDay, 26)}</g>`;
+    // 강수: 막대(시간당 mm), 비 소식이 없으면 강수확률
+    const mm = o.mm ?? 0;
+    if(mm >= 0.1){
+      const bh = Math.min(38, 7 + mm*8);
+      cols += `<rect x="${x-8}" y="${RAIN-bh}" width="16" height="${bh}" rx="4" fill="var(--rain)" opacity=".85"/>`;
+      cols += `<text x="${x}" y="${RAIN-bh-4}" text-anchor="middle" font-size="12.5" fill="var(--rain)">${mm<1?mm.toFixed(1):r(mm)}</text>`;
+    } else if(o.pop >= 30){
+      cols += `<text x="${x}" y="${RAIN-6}" text-anchor="middle" font-size="12.5" fill="var(--muted)">${o.pop}%</text>`;
+    }
+    // 바람: 화살표는 바람이 불어 가는 쪽
+    if(o.dir!=null && o.wind!=null){
+      const strong = o.wind >= 7, mid = o.wind >= 4;
+      cols += `<g transform="translate(${x} ${WIND+8}) rotate(${(o.dir+180)%360})"><path d="M0-8L5 3H1.5V8h-3V3H-5z" fill="${strong?'var(--warm)':mid?'var(--ink)':'var(--muted)'}" opacity="${mid?1:.75}"/></g>`;
+      cols += `<text x="${x}" y="${WIND+34}" text-anchor="middle" font-size="12.5" fill="var(--muted)">${units.w==='kmh' ? r(o.wind*3.6) : r(o.wind)}</text>`;
+    }
+    cols += `<text x="${x}" y="${H-4}" text-anchor="middle" font-size="13.5" fill="var(--muted)">${i===0?'지금':o.t.slice(11,13)+'시'}</text>`;
+  });
+  // 기상청 값이 끝나고 모델 값이 시작되는 곳 표시
+  const lastK = hrs.reduce((a,o,i)=>o.src!=='m'?i:a, -1);
+  if(lastK>=0 && lastK<hrs.length-1) cols += `<line x1="${(lastK+1)*step}" x2="${(lastK+1)*step}" y1="${top-30}" y2="${H-20}" stroke="var(--m9)" stroke-opacity=".45" stroke-dasharray="3 5"/><text x="${(lastK+1)*step-6}" y="${top-30}" text-anchor="end" font-size="12.5" fill="var(--muted)">기상청</text>`;
+  const nU = hrs.filter(o=>o.src==='u').length, nK = hrs.filter(o=>o.src==='k').length;
+  const srcTxt = (nU||nK) ? `기상청 값: 지금${O?'(관측)':''}${nU?` · 앞으로 ${nU}시간 초단기예보`:''}${nK?` · ${nK}시간 단기예보`:''}${lastK<hrs.length-1?' · 점선 뒤는 예보 모델':''}. ` : O ? '지금 칸은 기상청 관측값이에요. ' : '';
+  $('hourlyNote').hidden = false;
+  $('hourlyNote').textContent = `${srcTxt}파란 막대는 시간당 강수량(mm)이고, 비가 없는 시간은 강수확률이 30% 이상일 때만 적었어요. 화살표는 바람이 불어 가는 방향, 숫자는 풍속(${units.w==='kmh'?'km/h':'m/s'})이에요.`;
+  $('hourly').innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="앞으로 24시간 기온·강수·바람 변화">
     <defs><linearGradient id="fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--peach)" stop-opacity=".55"/><stop offset="1" stop-color="var(--peach)" stop-opacity="0"/></linearGradient></defs>
     <path d="${area}" fill="url(#fill)"/><path d="${path}" fill="none" stroke="var(--warm)" stroke-width="3.5" stroke-linecap="round"/>
     ${pts.map(([x,y])=>`<circle cx="${x}" cy="${y}" r="4" fill="var(--surface)" stroke="var(--warm)" stroke-width="2.5"/>`).join('')}${cols}</svg>`;
+  renderLater();
 }
+
+/* ---------- 오늘 남은 하늘: 비 시작·그침 + 바뀌는 날씨 작은 그림 ---------- */
+const COARSE = {clear:'fair', partly:'fair', cloud:'cloud', fog:'cloud', rain:'rain', snow:'snow', storm:'storm'};
+const COARSE_LABEL = {fair:'맑음', cloud:'흐림', rain:'비', snow:'눈', storm:'뇌우'};
+function renderLater(){
+  const d = main.wx, el = $('later');
+  if(!d || !main.look){ el.hidden = true; return; }
+  const h = d.hourly, s = d.h0, nowH = +h.time[s].slice(11,13);
+  let left = 24 - nowH;                         // 오늘 남은 시간
+  const extend = left < 7;                      // 저녁 늦게는 내일 아침 9시까지 봐요
+  if(extend) left += 9;
+  const hrs = []; for(let i=1;i<=left && s+i<h.time.length;i++) hrs.push(hourAt(s+i));
+  if(!hrs.length){ el.hidden = true; return; }
+  const today = d.daily.time[0];
+  const when = t => (t.slice(0,10)!==today ? '내일 ' : '') + (+t.slice(11,13)) + '시';
+  const O = obsFresh();
+  const nowKind = main.look.kind, nowWet = ['rain','snow','storm'].includes(nowKind) || (O && O.obs.pty>0);
+  const range = extend ? '내일 아침까지' : '오늘', rangeT = extend ? '내일 아침까지는' : '오늘은';
+  // 비 문장
+  let line;
+  const firstWet = hrs.findIndex(o=>o.wet);
+  const word = o => o && o.snow ? '눈' : '비';
+  if(nowWet){
+    const stop = hrs.findIndex(o=>!o.wet);
+    line = `${nowKind==='snow'?'❄️':'☔'} 지금 ${nowKind==='snow'?'눈':'비'}가 와요 · ` + (stop>=0 ? `${when(hrs[stop].t)}쯤 그칠 것 같아요` : `${range} 계속 이어져요`);
+  } else if(firstWet>=0){
+    const rest = hrs.slice(firstWet), stop = rest.findIndex(o=>!o.wet);
+    const pop = Math.max(...rest.slice(0, stop<0?rest.length:stop).map(o=>o.pop||0));
+    const w = word(hrs[firstWet]);
+    line = `${w==='눈'?'❄️':'☔'} ${when(hrs[firstWet].t)}쯤부터 ${w} 소식이 있어요${pop>=20?` (강수확률 ${pop}%)`:''}` + (stop>=0 ? ` · ${when(rest[stop].t)}쯤 그쳐요` : '');
+  } else {
+    const maxPop = Math.max(0, ...hrs.map(o=>o.pop||0));
+    line = maxPop < 30 ? `🌂 ${rangeT} 비 소식이 없어요` : `🌂 ${rangeT} 비 올 확률이 낮아요 (최대 ${maxPop}%)`;
+  }
+  // 바뀌는 순간만 작은 그림으로 (1시간짜리 잠깐 변화는 비·눈이 아니면 건너뛰어요)
+  const runs = [];
+  const ck = o => o.wet ? (o.kind==='snow' ? 'snow' : o.kind==='storm' ? 'storm' : 'rain') : (COARSE[o.kind]||'cloud');
+  hrs.forEach(o=>{ const c = ck(o); const last = runs.at(-1);
+    if(last && last.c===c) last.n++; else runs.push({c, o, n:1}); });
+  const steps = []; let cur = COARSE[nowKind]||'cloud';
+  runs.forEach((rn,i)=>{
+    if(rn.c===cur) return;
+    const precip = ['rain','snow','storm'].includes(rn.c), wasWet = ['rain','snow','storm'].includes(cur);
+    if(rn.n<2 && !precip && !wasWet && i<runs.length-1) return;    // 맑음↔흐림이 1시간만 바뀌는 건 건너뛰어요
+    const stop = wasWet && !precip;
+    steps.push({o:rn.o, kind: precip ? rn.c : rn.o.kind, label: stop ? `${COARSE_LABEL[cur]} 그침` : COARSE_LABEL[rn.c]});
+    cur = rn.c;
+  });
+  const chip = (o, k, t, label) => `<span class="chip">${icon(k, o.isDay, 26)}<b>${t}</b>${label}</span>`;
+  const nowChip = chip({isDay:main.look.isDay}, nowKind, '지금', COARSE_LABEL[COARSE[nowKind]||'cloud']);
+  const row = steps.length
+    ? nowChip + steps.slice(0,4).map(st=>`<span class="arrow">→</span>` + chip(st.o, st.kind, when(st.o.t), st.label)).join('')
+    : nowChip + `<span class="arrow">→</span><span class="chip" style="padding-left:10px">${range} 계속 ${COARSE_LABEL[COARSE[nowKind]||'cloud']}</span>`;
+  const src = hrs.some(o=>o.src!=='m') ? '기상청 예보 기준' : '예보 모델 기준';
+  el.innerHTML = `<p class="rainLine">${line}</p><div class="laterRow" role="list" aria-label="${range} 날씨 변화 (${src})">${row}</div>`;
+  el.title = src;
+  el.hidden = false;
+  renderSimple();
+}
+
+/* ---------- 비·눈 내리는 효과 (하늘 영역) ---------- */
+function renderFx(){
+  const el = $('fx'), sky = document.body.dataset.sky;
+  const mode = sky==='snow' ? 'snow' : (sky==='rain' || sky==='storm') ? 'rain' : '';
+  if(el.dataset.mode===mode) return;
+  el.dataset.mode = mode; el.className = 'fx ' + mode;
+  if(!mode || matchMedia('(prefers-reduced-motion: reduce)').matches){ el.innerHTML = ''; return; }
+  const n = mode==='rain' ? 48 : 36, R = Math.random;
+  el.innerHTML = Array.from({length:n}, ()=>{
+    const dur = mode==='rain' ? .55 + R()*.45 : 6 + R()*5;
+    const sz = mode==='snow' ? `width:${4+R()*5}px;height:${4+R()*5}px;` : '';
+    return `<i style="left:${R()*110}%;animation-duration:${dur.toFixed(2)}s;animation-delay:-${(R()*dur).toFixed(2)}s;opacity:${(.5+R()*.5).toFixed(2)};${sz}"></i>`;
+  }).join('');
+}
+
 function renderWeek(){
   const dd = main.wx.daily, N = main.normals;
   const norm = N ? dd.time.map(day=>normalFor(day)) : null;
@@ -1183,7 +1325,7 @@ function renderObs(){
   const p = PTY[x.pty];
   if(p){
     const [, kind] = wmo(c.weather_code);
-    if(kind!==p[1]){ $('desc').textContent = p[0]; $('bigicon').innerHTML = buddy(p[1], c.is_day===1); main.look = {kind:p[1], isDay:c.is_day===1}; document.body.dataset.sky = skyFor(p[1], c.is_day===1, +c.time.slice(11,13)); }
+    if(kind!==p[1]){ $('desc').textContent = p[0]; $('bigicon').innerHTML = buddy(p[1], c.is_day===1); main.look = {kind:p[1], isDay:c.is_day===1}; if($('later').innerHTML) renderLater(); document.body.dataset.sky = skyFor(p[1], c.is_day===1, +c.time.slice(11,13)); }
   }
   $('facts').innerHTML = [['체감',deg(c.apparent_temperature)],
     ['습도', x.rh!=null ? `${r(x.rh)}%` : `${c.relative_humidity_2m}%`],
@@ -1197,12 +1339,31 @@ const kmaFresh = () => main.place && kma.key===keyOf(main.place) && kma.now && D
 const obsFresh = () => kmaFresh() ? kma.now : null;
 const ultraFresh = () => kmaFresh() && kma.now.ultra && kma.now.ultra.time?.length ? kma.now.ultra : null;
 // 초단기예보 하늘·강수 → 앱의 날씨 종류
-function ultraKind(U, j){
-  const p = U.pty[j], sky = U.sky[j];
-  if(U.lgt?.[j]>0) return 'storm';
+// 기상청 강수 형태(PTY)·하늘(SKY)·낙뢰(LGT) → 앱의 날씨 종류
+function skyKind(p, sky, lgt){
+  if(lgt>0) return 'storm';
   if(p===3 || p===7) return 'snow';
   if(p>0) return 'rain';
   return sky===1 ? 'clear' : sky===3 ? 'partly' : sky===4 ? 'cloud' : null;
+}
+const ultraKind = (U, j) => skyKind(U.pty[j], U.sky[j], U.lgt?.[j]);
+const fcstFresh = () => main.place && kma.key===keyOf(main.place) && kma.fcst && Date.now()-kma.fcst.at < 6*3600e3 ? kma.fcst : null;
+// 한 시간의 날씨: 기상청 초단기예보 > 기상청 단기예보 > 예보 모델 순으로 골라요
+function hourAt(k){
+  const h = main.wx.hourly, t = h.time[k];
+  const o = {t, temp:h.temperature_2m[k], kind:wmo(h.weather_code[k])[1], isDay:h.is_day[k]===1, pop:h.precipitation_probability[k] ?? 0,
+    mm:h.precipitation?.[k] ?? null, wind:h.wind_speed_10m?.[k] ?? null, dir:h.wind_direction_10m?.[k] ?? null, src:'m'};
+  const F = fcstFresh();
+  if(F){ const i = F.hourly.time.indexOf(t); if(i>=0){ const H = F.hourly;
+    o.temp = H.tmp[i] ?? o.temp; o.kind = skyKind(H.pty[i], H.sky[i]) || o.kind; o.pop = H.pop[i] ?? o.pop; o.mm = H.pcp[i] ?? o.mm;
+    o.wind = H.wsd[i] ?? o.wind; o.dir = H.vec?.[i] ?? o.dir; o.src = 'k'; } }
+  const U = ultraFresh();
+  if(U){ const j = U.time.indexOf(t); if(j>=0){
+    o.temp = U.t[j] ?? o.temp; o.kind = ultraKind(U, j) || o.kind; o.mm = U.rain[j] ?? o.mm;
+    o.wind = U.wsd[j] ?? o.wind; o.dir = U.vec?.[j] ?? o.dir; o.src = 'u'; } }
+  o.wet = ['rain','snow','storm'].includes(o.kind) || (o.mm ?? 0) >= 0.1;
+  o.snow = o.kind==='snow';
+  return o;
 }
 
 /* ---------- 기상특보 (중계 서버 /warn, '기상청_기상특보 조회서비스' 활용신청 필요) ---------- */
@@ -1211,14 +1372,15 @@ function placeAdmin(p){
   if(!p || !Array.isArray(p.sel) || p.sel[0]==='' || p.sel[0]==null) return null;
   const a = REGIONS[+p.sel[0]]; if(!a || a[0]==='해외') return null;
   const b = p.sel[1]!=='' && p.sel[1]!=null ? a[3][+p.sel[1]] : null;
-  return {sido:a[0], sigungu:b ? b[0] : ''};
+  const c = b && p.sel[2]!=='' && p.sel[2]!=null ? b[3][+p.sel[2]] : null;
+  return {sido:a[0], sigungu:b ? b[0] : '', dong:c ? c[0] : ''};
 }
 async function loadWarn(place, id){
   const key = keyOf(place), adm = placeAdmin(place);
   if(warnSt.key!==key){ warnSt.data = warnSt.err = null; }
   warnSt.key = key;
   if(!kmaBase() || !adm){ warnSt.data = null; renderWarn(); return; }
-  try{ const j = await kmaGet(`/warn?sido=${encodeURIComponent(adm.sido)}&sigungu=${encodeURIComponent(adm.sigungu)}`); if(warnSt.key===key){ warnSt.data = j; warnSt.err = null; } }
+  try{ const j = await kmaGet(`/warn?sido=${encodeURIComponent(adm.sido)}&sigungu=${encodeURIComponent(adm.sigungu)}&dong=${encodeURIComponent(adm.dong)}`); if(warnSt.key===key){ warnSt.data = j; warnSt.err = null; } }
   catch(e){ if(warnSt.key===key){ warnSt.data = null; warnSt.err = e.message; } }
   if(id===reqId) renderWarn();
 }
@@ -2237,12 +2399,19 @@ async function loadScore(){
   const past = Object.keys(log).filter(d=>d<today);
   if(past.length && score.key!==key+today){
     const saved = store.get('weather:actual:'+key, null);
-    if(saved && saved.day===today) score = {key:key+today, actual:saved.daily};
+    if(saved && saved.day===today) score = {...score, key:key+today, actual:saved.daily};
     else try{
       const d = await fetchJSON(`https://api.open-meteo.com/v1/forecast?latitude=${main.place.lat}&longitude=${main.place.lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&past_days=31&forecast_days=1&timezone=auto`);
-      score = {key:key+today, actual:d.daily};
+      score = {key:key+today, actual:d.daily, obs:score.obs, obsKey:score.obsKey};
       store.set('weather:actual:'+key, {day:today, daily:d.daily});
     }catch(e){}
+  }
+  // 기상청 관측 기록(중계 서버가 매시 쌓은 값)이 있으면 그날은 그걸로 채점해요
+  if(past.length && kmaBase() && isKorea(main.place) && score.obsKey!==key+today){
+    try{
+      const j = await kmaGet(`/obs?lat=${main.place.lat}&lon=${main.place.lon}`);
+      score.obs = Object.fromEntries(j.days.map(x=>[x.date, x])); score.obsKey = key+today;
+    }catch(e){ score.obs = null; score.obsKey = key+today; }
   }
   renderScore();
 }
@@ -2253,18 +2422,21 @@ function renderScore(){
   const pending = Object.keys(log).filter(d=>d>=today).length;
   const A = score.actual && score.key===logKey(main.place)+today ? score.actual : null;
   const stats = [KMA_OFF, ...MODELS].map(m=>({m, n:0, ex:0, en:0, hit:0}));
-  let days = 0;
-  if(A){
-    Object.keys(log).filter(d=>d<today).forEach(day=>{
-      const j = A.time.indexOf(day); if(j<0 || A.temperature_2m_max[j]==null) return;
-      let used = false;
-      stats.forEach(s=>{ const f = log[day][s.m.id]; if(!f) return;
-        s.n++; used = true;
-        s.ex += Math.abs(f.mx - A.temperature_2m_max[j]); s.en += Math.abs(f.mn - A.temperature_2m_min[j]);
-        s.hit += ((f.p>=1) === ((A.precipitation_sum[j]??0)>=1)) ? 1 : 0; });
-      if(used) days++;
-    });
-  }
+  let days = 0, kDays = 0;
+  const OB = score.obsKey===logKey(main.place)+today ? score.obs : null;
+  Object.keys(log).filter(d=>d<today).forEach(day=>{
+    // 실제 값: 기상청 관측 기록 → 없으면 Open-Meteo 지난 날짜 분석값
+    let real = null;
+    if(OB && OB[day]) real = {mx:OB[day].max, mn:OB[day].min, p:OB[day].rain, k:true};
+    else if(A){ const j = A.time.indexOf(day); if(j>=0 && A.temperature_2m_max[j]!=null) real = {mx:A.temperature_2m_max[j], mn:A.temperature_2m_min[j], p:A.precipitation_sum[j]??0}; }
+    if(!real) return;
+    let used = false;
+    stats.forEach(s=>{ const f = log[day][s.m.id]; if(!f) return;
+      s.n++; used = true;
+      s.ex += Math.abs(f.mx - real.mx); s.en += Math.abs(f.mn - real.mn);
+      s.hit += ((f.p>=1) === (real.p>=1)) ? 1 : 0; });
+    if(used){ days++; if(real.k) kDays++; }
+  });
   const ranked = stats.filter(s=>s.n && cmpOn(s.m.id)).map(s=>({...s, mx:s.ex/s.n, mn:s.en/s.n, avg:(s.ex+s.en)/(2*s.n)})).sort((a,b)=>a.avg-b.avg);
   if(!ranked.length){
     $('score').innerHTML = `<p class="verdict">채점을 시작했어요. 오늘 기록한 ‘내일 예보’가 내일 실제 날씨와 비교돼서, 내일부터 첫 결과가 나와요.${pending?` (기록된 예보 ${pending}일 치)`:''}</p>`;
@@ -2277,7 +2449,7 @@ function renderScore(){
     <div class="scroller"><table class="cmp"><thead><tr><th>순위</th><th>기관</th><th>최고 오차</th><th>최저 오차</th><th>비 적중</th></tr></thead><tbody>
     ${ranked.map((s,i)=>`<tr><td>${i+1}</td><td><i class="dot" style="background:${s.m.color}"></i>${s.m.name}</td><td>${e(s.mx)}</td><td>${e(s.mn)}</td><td>${r(s.hit/s.n*100)}%</td></tr>`).join('')}
     </tbody></table></div>
-    <p class="note">‘내일 예보’를 하루 전에 기록한 값과 비교해요. 실제 값은 Open-Meteo가 관측 자료를 반영해 정리한 지난 날짜 데이터를 써요. 비 적중은 1mm 이상 비가 왔는지를 맞혔는지예요.</p>`;
+    <p class="note">‘내일 예보’를 하루 전에 기록한 값과 비교해요. 실제 값은 ${kDays ? `${kDays}일은 기상청 관측(매시 정시 관측의 최고·최저·강수 합)${days>kDays?`, ${days-kDays}일은 Open-Meteo가 관측을 반영해 정리한 분석값`:''}` : 'Open-Meteo가 관측을 반영해 정리한 지난 날짜 분석값(기상청 연결 후 관측이 쌓이면 관측값으로 바뀌어요)'}이에요. 비 적중은 1mm 이상 비가 왔는지를 맞혔는지예요.</p>`;
 }
 
 /* ---------- 주말 어디가 맑을까 ---------- */
@@ -2400,6 +2572,80 @@ $('units').addEventListener('click', e=>{
 });
 $('unitsReset').addEventListener('click', ()=>{ layout = defaultLayout(); saveLayout(); });
 
+/* ---------- 간단 보기 ---------- */
+let viewMode = store.get('weather:view', 'detail');            // 첫 화면: 'simple' | 'detail'
+let simpleItems = store.get('weather:simpleItems', ['umbrella','coat','air']);
+const SIMPLE_ITEMS = [['umbrella','우산'],['coat','겉옷'],['air','공기'],['uv','자외선'],['commute','출퇴근']];
+function setView(v){ document.body.classList.toggle('simple', v==='simple'); document.body.classList.toggle('canSimple', viewMode==='simple'); }
+function renderViewSettings(){
+  $('viewMode').innerHTML = [['simple','간단 보기'],['detail','자세히 보기']].map(([k,l])=>`<button type="button" data-k="${k}" aria-pressed="${viewMode===k}">${l}</button>`).join('');
+  $('simplePick').innerHTML = SIMPLE_ITEMS.map(([k,l])=>`<button type="button" data-k="${k}" aria-pressed="${simpleItems.includes(k)}">${l}</button>`).join('');
+}
+$('viewMode').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  viewMode = b.dataset.k; store.set('weather:view', viewMode); renderViewSettings(); setView(viewMode);
+});
+$('simplePick').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  const k = b.dataset.k;
+  if(simpleItems.includes(k)){ if(simpleItems.length>1) simpleItems = simpleItems.filter(x=>x!==k); }
+  else simpleItems = [...simpleItems.slice(-2), k];                 // 세 개가 넘으면 가장 먼저 고른 것을 빼요
+  simpleItems = SIMPLE_ITEMS.map(x=>x[0]).filter(x=>simpleItems.includes(x));
+  store.set('weather:simpleItems', simpleItems); renderViewSettings(); renderSimple();
+});
+$('toDetail').addEventListener('click', ()=>{ setView('detail'); window.scrollTo({top:0}); });
+$('toSimple').addEventListener('click', ()=>{ setView('simple'); window.scrollTo({top:0, behavior:'smooth'}); });
+
+// 세 가지 답 카드
+function simpleAnswer(k){
+  const d = main.wx, dd = d.daily, h = d.hourly, s = d.h0;
+  const hi = dd.temperature_2m_max[0], lo = dd.temperature_2m_min[0];
+  const rest = []; for(let i=1; i<=Math.max(6, 24-+h.time[s].slice(11,13)) && s+i<h.time.length; i++) rest.push(hourAt(s+i));
+  if(k==='umbrella'){
+    const O = obsFresh(), nowWet = ['rain','snow','storm'].includes(main.look?.kind) || (O && O.obs.pty>0);
+    const first = rest.find(o=>o.wet), pop = Math.max(0, ...rest.map(o=>o.pop||0));
+    if(nowWet) return ['☂️','우산 챙기세요','지금 비가 와요'];
+    if(first) return ['☂️','우산 챙기세요',`${(+first.t.slice(11,13))}시부터 ${first.snow?'눈':'비'}`];
+    if(pop>=30) return ['🌂','작은 우산',`비 확률 ${pop}%`];
+    return ['🌤️','우산 필요 없어요','비 소식 없음'];
+  }
+  if(k==='coat'){
+    const gap = hi-lo, base = (hi*2+lo)/3;
+    if(gap>=10) return ['🧥','겉옷 챙기세요',`일교차 ${r(dT(gap))}°`];
+    if(base<12) return ['🧣','따뜻하게',`최저 ${deg(lo)}`];
+    if(base>=23) return ['👕','가볍게',`최고 ${deg(hi)}`];
+    return ['👚','얇은 겉옷',`${deg(lo)}~${deg(hi)}`];
+  }
+  if(k==='air'){
+    const pm = main.aq?.dayMax?.[0];
+    if(!pm || pm.pm10==null || pm.pm2_5==null) return ['🌫️','공기 정보 없음','잠시 뒤 다시'];
+    const g = [grade(pm.pm2_5, PM25), grade(pm.pm10, PM10)].sort((a,b)=>b[2].localeCompare(a[2]))[0];
+    const face = g[2]==='g1' ? '😊' : g[2]==='g2' ? '🙂' : '😷';
+    return [face, `공기 ${g[1]}`, g[2]>='g3' ? '마스크 챙기세요' : `초미세 ${r(pm.pm2_5)}`];
+  }
+  if(k==='uv'){
+    const uv = dd.uv_index_max[0];
+    if(uv==null) return ['🧴','자외선','정보 없음'];
+    const g = grade(uv, UVG);
+    return [uv>=6?'🧴':'😎', `자외선 ${g[1]}`, uv>=6 ? '선크림 바르세요' : `최대 ${uv.toFixed(0)}`];
+  }
+  if(k==='commute'){
+    const pick = hr => { for(let i=0;i<24 && s+i<h.time.length;i++){ if(+h.time[s+i].slice(11,13)===hr) return hourAt(s+i); } return null; };
+    const g = pick(commute.go), b = pick(commute.back);
+    const wet = [g,b].filter(o=>o && o.wet);
+    const label = wet.length ? `${wet[0]===g?'출근':'퇴근'}길 ${wet[0].snow?'눈':'비'}` : '출퇴근 걱정 없어요';
+    return [wet.length?'☔':'🚶', label, [g&&`${commute.go}시 ${deg(g.temp)}`, b&&`${commute.back}시 ${deg(b.temp)}`].filter(Boolean).join(' · ')];
+  }
+  return ['','',''];
+}
+function renderSimple(){
+  if(!main.wx) return;
+  $('answers').innerHTML = simpleItems.slice(0,3).map(k=>{ const [ic,t,sub] = simpleAnswer(k); return `<div><span class="ai" aria-hidden="true">${ic}</span><b>${t}</b>${sub}</div>`; }).join('');
+  $('answers').style.gridTemplateColumns = `repeat(${Math.min(3, simpleItems.length)},1fr)`;
+  const dd = main.wx.daily, base = (dd.temperature_2m_max[0]*2 + dd.temperature_2m_min[0])/3;
+  $('simpleWear').textContent = OUTFIT.find(o => base >= o[0])[1];
+}
+
 /* ---------- 화면 테마 (자동 / 밝게 / 어둡게) ---------- */
 let theme = store.get('weather:theme', 'auto');
 const darkMQ = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
@@ -2408,6 +2654,7 @@ function applyTheme(){
   if(theme==='auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
   const sky = document.body.dataset.sky;
   document.body.classList.toggle('skyDark', isDark() || sky==='night' || sky==='storm');
+  renderFx();
   const meta = document.querySelector('meta[name="theme-color"]');
   if(meta) meta.content = isDark() ? '#1d1a2c' : '#a8d4ff';
 }
@@ -2461,7 +2708,7 @@ if('serviceWorker' in navigator && (location.protocol==='https:' || location.hos
 
 /* ---------- 시작 ---------- */
 applyLayout(); renderUnitList(); renderUnits(); renderCmpControls(); renderOutfitTabs(); initCommuteSettings(); renderKmaSettings(); renderCmpPick(); renderRain();
-renderStart(); renderTheme(); applyTheme();
+renderStart(); renderTheme(); applyTheme(); renderViewSettings(); setView(viewMode);
 const savedPlace = refreshPlace(store.get('weather:place', null));
 const openSaved = () => {
   if(savedPlace && savedPlace.lat!=null){ mainPicker.set(savedPlace.sel); load(savedPlace); }

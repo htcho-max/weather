@@ -14,7 +14,8 @@ window.fetch=(u)=>{ __calls.push(u);
  // 기상청 중계 서버(worker/kma-worker.js) 흉내: 주소에 /now?, /fcst? 가 들어가면
  if(window.__kmaFail && /\/(now|fcst)\?/.test(u)) return J({ok:false,error:window.__kmaFail});
  if(u.includes('/now?')) return J({ok:true,nx:60,ny:127,base:nowT.slice(0,11)+String(Math.max(0,+nowT.slice(11,13)-1)).padStart(2,'0')+':00',obs:{t:14.6,rh:62,wind:1.4,vec:250,rain1h:0,pty:window.__kmaPty||0},
-  ultra:{base:nowT.slice(0,14)+'30',time:[1,2,3,4,5,6].map(i=>new Date(Date.parse(nowT+':00Z')+i*3600e3).toISOString().slice(0,13)+':00'),t:[15,15.5,16,15,14,13],rain:[0,0,0,0.5,1,0],sky:[1,1,3,4,4,4],pty:[0,0,0,1,1,0],reh:[60,60,60,70,80,80],wsd:[1,1,2,2,3,3],lgt:[0,0,0,0,0,0]}});
+  ultra:{base:nowT.slice(0,14)+'30',time:[1,2,3,4,5,6].map(i=>new Date(Date.parse(nowT+':00Z')+i*3600e3).toISOString().slice(0,13)+':00'),t:[15,15.5,16,15,14,13],rain:[0,0,0,0.5,1,0],sky:[1,1,3,4,4,4],pty:[0,0,0,1,1,0],reh:[60,60,60,70,80,80],wsd:[1,1,2,2,3,3],vec:[270,270,250,200,180,180],lgt:[0,0,0,0,0,0]}});
+ if(u.includes('/obs?')) return J({ok:true,nx:60,ny:127,days:window.__obsDays||[]});
  if(u.includes('/warn?')) return J(window.__warn||{ok:true,tmFc:today+'T10:00',active:[{name:'건조주의보',part:false},{name:'강풍주의보',part:true}],prelim:['(1) 강풍 예비특보 : 10월 30일 새벽(00시~06시) : 서울, 인천, 경기도'],nation:3});
  if(u.includes('/push/key')) return J({ok:true,key:'BKxx'});
  if(/\/push\/(subscribe|unsubscribe|test)/.test(u)) return J({ok:true,alertHour:7,status:201});
@@ -29,6 +30,6 @@ window.fetch=(u)=>{ __calls.push(u);
  if(u.includes('models=')){const ids=u.match(/models=([^&]+)/)[1].split(',');const multi=ids.length>1;const o={utc_offset_seconds:32400,daily:{time:D7},hourly:{time:H7}};
   ids.forEach((id,k)=>{const x=one(id,k);const s=multi?'_'+id:'';for(const a in x.d)o.daily[a+s]=x.d[a];for(const a in x.h)o.hourly[a+s]=x.h[a];});return J(o);}
  return J({utc_offset_seconds:32400,current:{time:nowT,temperature_2m:17,apparent_temperature:16,relative_humidity_2m:50,weather_code:1,wind_speed_10m:2.3,is_day:1,precipitation:0},
-  hourly:{time:H,temperature_2m:H.map((_,i)=>11+5*Math.sin((i-9)/24*2*Math.PI)),apparent_temperature:H.map(()=>15),weather_code:H.map(()=>1),precipitation_probability:H.map(()=>5),is_day:H.map((_,i)=>i%24>6&&i%24<18?1:0),uv_index:H.map(()=>4),relative_humidity_2m:H.map(()=>45),wind_speed_10m:H.map(()=>3)},
+  hourly:{time:H,temperature_2m:H.map((_,i)=>11+5*Math.sin((i-9)/24*2*Math.PI)),apparent_temperature:H.map(()=>15),weather_code:H.map(()=>1),precipitation_probability:H.map(()=>5),is_day:H.map((_,i)=>i%24>6&&i%24<18?1:0),uv_index:H.map(()=>4),relative_humidity_2m:H.map(()=>45),wind_speed_10m:H.map((_,i)=>2+(i%7)),precipitation:H.map((_,i)=>i%24>=15&&i%24<=17?1.2:0),wind_direction_10m:H.map((_,i)=>(i*15)%360)},
   daily:{time:days,weather_code:days.map(()=>1),temperature_2m_max:days.map(()=>19),temperature_2m_min:days.map(()=>7),precipitation_probability_max:days.map(()=>10),sunrise:days.map(d=>d+'T06:50'),sunset:days.map(d=>d+'T17:40'),daylight_duration:days.map(()=>39000),uv_index_max:days.map(()=>5),wind_speed_10m_max:days.map(()=>4)}});
 };})();

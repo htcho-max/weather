@@ -10,7 +10,8 @@
 //  GET  /                           상태 확인 {ok, keySet, push}
 //  GET  /now?lat=&lon=              초단기실황(지금 관측) + 초단기예보(앞으로 6시간)
 //  GET  /fcst?lat=&lon=             단기예보(약 4~5일) + 일 최고·최저
-//  GET  /warn?sido=&sigungu=        기상특보 현황 중 그 지역에 해당하는 것 ('기상청_기상특보 조회서비스' 활용신청 필요)
+//  GET  /warn?sido=&sigungu=&dong= 기상특보 현황 중 그 지역에 해당하는 것 ('기상청_기상특보 조회서비스' 활용신청 필요)
+//  GET  /obs?lat=&lon=              그 격자의 지난 날짜별 관측 최고·최저·강수 (매시 예약 실행이 쌓아요, KV 필요)
 //  GET  /push/key                   웹 푸시 공개키 (처음 부를 때 자동으로 만들어 KV에 저장)
 //  POST /push/subscribe             {sub, name, lat, lon, go, back} 알림 구독 저장·갱신
 //  POST /push/unsubscribe           {endpoint}
@@ -20,7 +21,7 @@
 //  KMA_KEY          (필수, 비밀) 공공데이터포털 인증키
 //  ALLOWED_ORIGINS  (선택) 앱 주소를 쉼표로. 예: https://아이디.github.io  (비우면 모두 허용)
 //  PUSH             (알림용, KV 연결) Worker 설정 → 바인딩 → KV 네임스페이스, 변수 이름 PUSH
-//  예약 실행        (알림용) Worker 설정 → 트리거 → Cron: 5 * * * *  (매시 5분)
+//  예약 실행        (알림·관측 기록용) Worker 설정 → 트리거 → Cron: 5 * * * *  (매시 5분)
 
 const VILAGE = 'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0';
 const WARN = 'https://apis.data.go.kr/1360000/WthrWrnInfoService';
@@ -32,6 +33,7 @@ export default {
     toGrid: (...a) => toGrid(...a), nowBase: (...a) => nowBase(...a), fcstBase: (...a) => fcstBase(...a), ultraBase: (...a) => ultraBase(...a),
     amount: (...a) => amount(...a), matchWarnings: (...a) => matchWarnings(...a), rainCheck: (...a) => rainCheck(...a),
     encryptPayload: (...a) => encryptPayload(...a), vapidJwt: (...a) => vapidJwt(...a), memo,
+    recordObs: (...a) => recordObs(...a), obsDays: (...a) => obsDays(...a),
   },
 
   async fetch(request, env) {
@@ -54,12 +56,19 @@ export default {
       if (!env.KMA_KEY) return json({ ok: false, error: 'Worker에 KMA_KEY(인증키)가 설정되지 않았어요' }, 500, cors);
 
       if (path === '/warn') {
-        const out = await getWarn(env.KMA_KEY, url.searchParams.get('sido') || '', url.searchParams.get('sigungu') || '');
+        const out = await getWarn(env.KMA_KEY, url.searchParams.get('sido') || '', url.searchParams.get('sigungu') || '', url.searchParams.get('dong') || '');
         return json({ ok: true, ...out }, 200, { ...cors, 'Cache-Control': 'public, max-age=300' });
       }
-      if (path !== '/now' && path !== '/fcst') return json({ ok: false, error: '없는 주소예요 (/now, /fcst, /warn)' }, 404, cors);
+      if (path === '/obs') {
+        if (!env.PUSH) throw fail('Worker에 저장소(KV, 이름 PUSH)가 연결되지 않았어요', 500);
+        const g = gridOf(url.searchParams.get('lat'), url.searchParams.get('lon'));
+        await touchGrid(env, g);
+        return json({ ok: true, nx: g.nx, ny: g.ny, days: await obsDays(env, g) }, 200, { ...cors, 'Cache-Control': 'public, max-age=900' });
+      }
+      if (path !== '/now' && path !== '/fcst') return json({ ok: false, error: '없는 주소예요 (/now, /fcst, /warn, /obs)' }, 404, cors);
 
       const g = gridOf(url.searchParams.get('lat'), url.searchParams.get('lon'));
+      if (path === '/now' && env.PUSH) await touchGrid(env, g).catch(() => {});
       const out = path === '/now' ? await getNow(env.KMA_KEY, g.nx, g.ny) : await getFcst(env.KMA_KEY, g.nx, g.ny);
       return json({ ok: true, nx: g.nx, ny: g.ny, ...out }, 200, { ...cors, 'Cache-Control': `public, max-age=${path === '/now' ? 300 : 900}` });
     } catch (e) {
@@ -69,7 +78,7 @@ export default {
 
   // 예약 실행 (매시): 출퇴근 비 알림
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runAlerts(env));
+    ctx.waitUntil(Promise.allSettled([runAlerts(env), recordObs(env)]));
   },
 };
 
@@ -206,7 +215,7 @@ async function getUltra(key, nx, ny) {
     const time = [...H.keys()].sort();
     const col = (k, f) => time.map(t => f(H.get(t)[k]));
     return { base: iso(base.date, base.time).slice(0, 14) + base.time.slice(2), time,
-      t: col('T1H', num), rain: col('RN1', amount), sky: col('SKY', num), pty: col('PTY', num), reh: col('REH', num), wsd: col('WSD', num), lgt: col('LGT', num) };
+      t: col('T1H', num), rain: col('RN1', amount), sky: col('SKY', num), pty: col('PTY', num), reh: col('REH', num), wsd: col('WSD', num), vec: col('VEC', num), lgt: col('LGT', num) };
   }
   return null;
 }
@@ -233,7 +242,7 @@ async function getFcst(key, nx, ny) {
       hourly: {
         time: times,
         tmp: col('TMP', num), pop: col('POP', num), pcp: col('PCP', amount), sno: col('SNO', amount),
-        sky: col('SKY', num), pty: col('PTY', num), reh: col('REH', num), wsd: col('WSD', num),
+        sky: col('SKY', num), pty: col('PTY', num), reh: col('REH', num), wsd: col('WSD', num), vec: col('VEC', num),
       },
       daily: { time: days, tmx: days.map(d => tmx.get(d) ?? null), tmn: days.map(d => tmn.get(d) ?? null) },
     };
@@ -244,15 +253,50 @@ async function getFcst(key, nx, ny) {
 /* ---------- 기상특보 ---------- */
 // 특보 현황(getPwnStatus)의 글을 읽어 그 지역에 해당하는 특보만 골라요.
 // 글 모양 예: "o 건조주의보 : 서울, 인천, 강원도(강릉시평지, 동해시평지), 경상북도(포항, 경주)"
-async function getWarn(key, sido, sigungu) {
+async function getWarn(key, sido, sigungu, dong) {
   const items = await callApi(key, `${WARN}/getPwnStatus`, { pageNo: 1, numOfRows: 10, dataType: 'JSON' }, 5 * 60e3);
   const it = (items || [])[0] || {};
   const tm = String(it.tmFc || '');
-  const m = matchWarnings(String(it.t6 || ''), String(it.t7 || ''), sido, sigungu);
+  const m = matchWarnings(String(it.t6 || ''), String(it.t7 || ''), sido, sigungu, dong);
   return { tmFc: tm.length >= 12 ? `${tm.slice(0, 4)}-${tm.slice(4, 6)}-${tm.slice(6, 8)}T${tm.slice(8, 10)}:${tm.slice(10, 12)}` : null, ...m };
 }
 const SIDO_ALIAS = { 경기: ['경기도', '경기'], 강원: ['강원도', '강원'], 충청북: ['충청북도', '충북'], 충청남: ['충청남도', '충남'], 전북: ['전라북도', '전북'],
-  전라북: ['전라북도', '전북'], 전라남: ['전라남도', '전남'], 경상북: ['경상북도', '경북'], 경상남: ['경상남도', '경남'], 제주: ['제주도', '제주'] };
+  전라북: ['전라북도', '전북'], 전라남: ['전라남도', '전남', '전남광주'], 광주: ['광주', '전남광주'], 경상북: ['경상북도', '경북'], 경상남: ['경상남도', '경남'], 제주: ['제주도', '제주'] };
+// 시/군보다 잘게 나뉜 특보구역 (기상청 날씨누리 특보구역 안내, 2024~2026 세분화 기준)
+// 시/도 줄임말 → 구역 이름 → (시군구, 읍면동) 판별
+const inGu = (...gu) => (sg) => gu.includes(sg.replace(/^\S+시\s+/, '').trim()) || gu.includes(sg.trim());
+const startsAny = (dong, list) => list.some(x => dong.startsWith(x));
+const ZONES = {
+  서울: {
+    서울동남권: inGu('강동구', '송파구', '강남구', '서초구'),
+    서울동북권: inGu('도봉구', '노원구', '강북구', '성북구', '동대문구', '중랑구', '성동구', '광진구'),
+    서울서남권: inGu('강서구', '양천구', '구로구', '영등포구', '동작구', '관악구', '금천구'),
+    서울서북권: inGu('은평구', '종로구', '마포구', '서대문구', '중구', '용산구'),
+  },
+  부산: {
+    부산동부: inGu('기장군', '해운대구', '수영구', '남구'),
+    부산중부: inGu('금정구', '동래구', '연제구', '부산진구', '사상구', '북구'),
+    부산서부: inGu('강서구', '사하구', '서구', '중구', '동구', '영도구'),
+  },
+  인천: {
+    인천영종: (sg, d) => sg === '중구' && startsAny(d, ['영종', '운서', '용유']),
+    인천남부: (sg, d) => ['동구', '미추홀구', '연수구', '남동구'].includes(sg) || (sg === '중구' && !startsAny(d, ['영종', '운서', '용유'])),
+    인천북부: inGu('서구', '부평구', '계양구'),
+    강화: inGu('강화군'),
+    옹진: (sg, d) => sg === '옹진군' && !startsAny(d, ['백령', '대청', '연평']),
+    서해5도: (sg, d) => sg === '옹진군' && startsAny(d, ['백령', '대청', '연평']),
+    '백령도.대청도': (sg, d) => sg === '옹진군' && startsAny(d, ['백령', '대청']),
+    '연평도.우도': (sg, d) => sg === '옹진군' && startsAny(d, ['연평']),
+  },
+  경기: {
+    용인서북부: (sg) => /기흥구|수지구/.test(sg),
+    용인동북부: (sg, d) => /처인구/.test(sg) && (startsAny(d, ['포곡', '모현', '양지']) || /동$/.test(d)),
+    용인남부: (sg, d) => /처인구/.test(sg) && startsAny(d, ['이동', '남사', '원삼', '백암']),
+    파주동북부: (sg, d) => /파주/.test(sg) && startsAny(d, ['문산', '법원', '파주읍', '적성', '파평']),
+    파주서북부: (sg, d) => /파주/.test(sg) && startsAny(d, ['장단', '군내', '진서', '진동']),
+    파주남부: (sg, d) => /파주/.test(sg) && (startsAny(d, ['조리', '광탄', '탄현', '월롱']) || /동$/.test(d)),
+  },
+};
 function splitTop(s) {   // 괄호 밖의 쉼표로만 나눠요
   const out = []; let depth = 0, cur = '';
   for (const ch of s) {
@@ -263,11 +307,19 @@ function splitTop(s) {   // 괄호 밖의 쉼표로만 나눠요
   if (cur.trim()) out.push(cur.trim());
   return out;
 }
-function matchWarnings(t6, t7, sido, sigungu) {
+function matchWarnings(t6, t7, sido, sigungu, dong = '') {
   const key = sido.replace(/(특별자치시|특별자치도|특별시|광역시|도)$/, '');
   const alias = SIDO_ALIAS[key] || [key];
+  const zones = ZONES[key] || {};
   const metro = /(특별시|광역시|특별자치시)$/.test(sido);
   const city = (sigungu.split(/\s+/)[0] || '').replace(/(시|군|구)$/, '');
+  // 구역 이름 하나가 내 동네에 해당하나: 'yes' | 'no' | null(모름)
+  const zoneHit = name => {
+    const z = zones[name.replace(/\s/g, '')];
+    if (z) return sigungu && z(sigungu.trim(), dong.trim()) ? 'yes' : (sigungu ? 'no' : null);
+    if (city && (name.startsWith(city) || name.includes(city))) return 'yes';
+    return null;
+  };
   const lines = t6.replace(/\r/g, '').split(/\n|(?=o\s)/).map(s => s.trim()).filter(Boolean);
   const active = []; let nation = 0;
   for (const ln of lines) {
@@ -280,17 +332,69 @@ function matchWarnings(t6, t7, sido, sigungu) {
       const am = area.match(/^([^(]+?)\s*(?:\((.*)\))?$/);
       if (!am) continue;
       const head = am[1].trim();
+      // "서울동남권"처럼 구역 이름이 바로 나온 경우
+      const direct = zones[head.replace(/\s/g, '')] ? zoneHit(head) : null;
+      if (direct === 'yes') { hit = 'all'; break; }
+      if (direct === 'no') continue;
       if (!alias.some(a => head.startsWith(a))) continue;
       if (!am[2]) { hit = 'all'; break; }
-      const subs = am[2].split(/[,，]/).map(s => s.trim());
-      if (city && subs.some(s => s.startsWith(city) || s.includes(city))) { hit = 'all'; break; }
-      if (metro || !city) hit = hit || 'part';    // 광역시 안 권역(예: 서울동남권)은 구와 맞출 수 없어 '일부'로
+      const res = am[2].split(/[,，]/).map(s => zoneHit(s.trim()));
+      if (res.includes('yes')) { hit = 'all'; break; }
+      if (res.every(r => r === 'no')) continue;          // 알고 있는 구역만 나왔고 모두 아님
+      if (metro || !city) hit = hit || 'part';          // 모르는 권역 이름이 섞이면 '일부 지역'
     }
     if (hit) active.push({ name, part: hit === 'part' });
   }
   const prelim = t7.replace(/\r/g, '').split(/\n/).map(s => s.trim())
     .filter(s => s && !/없음/.test(s) && alias.some(a => s.includes(a))).slice(0, 4);
   return { active, prelim, nation };
+}
+
+/* ---------- 관측 기록 (성적표 채점용) ---------- */
+// 앱이 /now·/obs로 부른 격자를 'grids'에 적어 두고, 매시 예약 실행 때 초단기실황(정시 관측)을 쌓아요.
+// obs:nx,ny = { "2026-10-29": { t: {"07": 12.3, ...}, r: {"07": 0, ...} }, ... }  (45일 보관)
+const kstDay = () => kstNow().toISOString().slice(0, 10);
+async function touchGrid(env, g) {
+  const grids = (await env.PUSH.get('grids', 'json')) || {};
+  const k = `${g.nx},${g.ny}`, today = kstDay();
+  if (grids[k] === today) return;
+  grids[k] = today;
+  await env.PUSH.put('grids', JSON.stringify(grids));
+}
+async function recordObs(env) {
+  if (!env.PUSH || !env.KMA_KEY) return;
+  const grids = (await env.PUSH.get('grids', 'json')) || {};
+  const cut = new Date(Date.now() + 9 * 3600e3 - 10 * 864e5).toISOString().slice(0, 10);
+  let changed = false;
+  for (const [k, seen] of Object.entries(grids)) {
+    if (seen < cut) { delete grids[k]; changed = true; continue; }   // 열흘 넘게 안 본 곳은 그만 기록
+    const [nx, ny] = k.split(',').map(Number);
+    try {
+      const base = nowBase();
+      const items = await callVilage(env.KMA_KEY, 'getUltraSrtNcst', base, nx, ny, 20);
+      if (!items || !items.length) continue;
+      const v = {}; items.forEach(it => { v[it.category] = it.obsrValue; });
+      const t = num(v.T1H); if (t == null) continue;
+      const day = `${base.date.slice(0, 4)}-${base.date.slice(4, 6)}-${base.date.slice(6, 8)}`, hh = base.time.slice(0, 2);
+      const rec = (await env.PUSH.get(`obs:${k}`, 'json')) || {};
+      rec[day] = rec[day] || { t: {}, r: {} };
+      if (rec[day].t[hh] === t) continue;
+      rec[day].t[hh] = t; rec[day].r[hh] = amount(v.RN1) ?? 0;
+      const old = new Date(Date.now() + 9 * 3600e3 - 45 * 864e5).toISOString().slice(0, 10);
+      Object.keys(rec).forEach(d => { if (d < old) delete rec[d]; });
+      await env.PUSH.put(`obs:${k}`, JSON.stringify(rec));
+    } catch (e) { /* 다음 격자 계속 */ }
+  }
+  if (changed) await env.PUSH.put('grids', JSON.stringify(grids));
+}
+// 하루에 18시간 이상 관측이 모인 지난 날짜만 (정시 관측이라 실제 최고·최저보다 조금 덜 극단적일 수 있어요)
+async function obsDays(env, g) {
+  const rec = (await env.PUSH.get(`obs:${g.nx},${g.ny}`, 'json')) || {};
+  const today = kstDay();
+  return Object.keys(rec).sort().filter(d => d < today).map(d => {
+    const ts = Object.values(rec[d].t), rs = Object.values(rec[d].r);
+    return { date: d, n: ts.length, max: Math.max(...ts), min: Math.min(...ts), rain: Math.round(rs.reduce((a, b) => a + (b || 0), 0) * 10) / 10 };
+  }).filter(x => x.n >= 18);
 }
 
 /* ---------- 출퇴근 비 알림 (웹 푸시) ---------- */
@@ -417,10 +521,13 @@ async function runAlerts(env) {
     for (const k of page.keys) {
       const s = await env.PUSH.get(k.name, 'json');
       if (!s || (s.go + 23) % 24 !== hour) continue;
+      const sentKey = `sent:${k.name.slice(4)}:${kstDay()}`;
+      if (await env.PUSH.get(sentKey)) continue;            // 오늘 이미 보냈으면 건너뛰어요 (예약 실행이 겹쳐도 한 번만)
       try {
         const msg = await checkSub(env, s);
         if (!msg) continue;
         const status = await sendPush(env, s, msg);
+        if (status < 300) await env.PUSH.put(sentKey, '1', { expirationTtl: 2 * 86400 });
         if (status === 404 || status === 410) await env.PUSH.delete(k.name);
       } catch (e) { /* 한 명이 실패해도 다음 사람은 계속 */ }
     }
