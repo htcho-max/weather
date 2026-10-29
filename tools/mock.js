@@ -15,6 +15,7 @@ window.fetch=(u)=>{ __calls.push(u);
  if(window.__kmaFail && /\/(now|fcst)\?/.test(u)) return J({ok:false,error:window.__kmaFail});
  if(u.includes('/now?')) return J({ok:true,nx:60,ny:127,base:nowT.slice(0,11)+String(Math.max(0,+nowT.slice(11,13)-1)).padStart(2,'0')+':00',obs:{t:14.6,rh:62,wind:1.4,vec:250,rain1h:0,pty:window.__kmaPty||0},
   ultra:{base:nowT.slice(0,14)+'30',time:[1,2,3,4,5,6].map(i=>new Date(Date.parse(nowT+':00Z')+i*3600e3).toISOString().slice(0,13)+':00'),t:[15,15.5,16,15,14,13],rain:[0,0,0,0.5,1,0],sky:[1,1,3,4,4,4],pty:[0,0,0,1,1,0],reh:[60,60,60,70,80,80],wsd:[1,1,2,2,3,3],vec:[270,270,250,200,180,180],lgt:[0,0,0,0,0,0]}});
+ if(u.includes('/air?')) return J(window.__airFail?{ok:false,error:window.__airFail}:{ok:true,station:'중구',addr:'서울 중구 덕수궁길 15',dist:1.2,dataTime:today+' 20:00',pm10:52,pm25:31,pm10Grade:2,pm25Grade:2,khai:80,khaiGrade:2});
  if(u.includes('/obs?')) return J({ok:true,nx:60,ny:127,days:window.__obsDays||[]});
  if(u.includes('/warn?')) return J(window.__warn||{ok:true,tmFc:today+'T10:00',active:[{name:'건조주의보',part:false},{name:'강풍주의보',part:true}],prelim:['(1) 강풍 예비특보 : 10월 30일 새벽(00시~06시) : 서울, 인천, 경기도'],nation:3});
  if(u.includes('/push/key')) return J({ok:true,key:'BKxx'});

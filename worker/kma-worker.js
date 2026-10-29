@@ -12,6 +12,7 @@
 //  GET  /fcst?lat=&lon=             단기예보(약 4~5일) + 일 최고·최저
 //  GET  /warn?sido=&sigungu=&dong= 기상특보 현황 중 그 지역에 해당하는 것 ('기상청_기상특보 조회서비스' 활용신청 필요)
 //  GET  /obs?lat=&lon=              그 격자의 지난 날짜별 관측 최고·최저·강수 (매시 예약 실행이 쌓아요, KV 필요)
+//  GET  /air?lat=&lon=              가장 가까운 에어코리아 측정소의 실시간 미세먼지 ('에어코리아 대기오염정보'·'측정소정보' 활용신청 필요)
 //  GET  /push/key                   웹 푸시 공개키 (처음 부를 때 자동으로 만들어 KV에 저장)
 //  POST /push/subscribe             {sub, name, lat, lon, go, back} 알림 구독 저장·갱신
 //  POST /push/unsubscribe           {endpoint}
@@ -25,6 +26,7 @@
 
 const VILAGE = 'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0';
 const WARN = 'https://apis.data.go.kr/1360000/WthrWrnInfoService';
+const AIR = 'https://apis.data.go.kr/B552584';
 const memo = new Map();   // 같은 요청 응답을 잠깐 기억 (Worker가 살아 있는 동안만)
 
 export default {
@@ -33,7 +35,7 @@ export default {
     toGrid: (...a) => toGrid(...a), nowBase: (...a) => nowBase(...a), fcstBase: (...a) => fcstBase(...a), ultraBase: (...a) => ultraBase(...a),
     amount: (...a) => amount(...a), matchWarnings: (...a) => matchWarnings(...a), rainCheck: (...a) => rainCheck(...a),
     encryptPayload: (...a) => encryptPayload(...a), vapidJwt: (...a) => vapidJwt(...a), memo,
-    recordObs: (...a) => recordObs(...a), obsDays: (...a) => obsDays(...a),
+    recordObs: (...a) => recordObs(...a), obsDays: (...a) => obsDays(...a), getAir: (...a) => getAir(...a), airSido: (...a) => airSido(...a),
   },
 
   async fetch(request, env) {
@@ -58,6 +60,11 @@ export default {
       if (path === '/warn') {
         const out = await getWarn(env.KMA_KEY, url.searchParams.get('sido') || '', url.searchParams.get('sigungu') || '', url.searchParams.get('dong') || '');
         return json({ ok: true, ...out }, 200, { ...cors, 'Cache-Control': 'public, max-age=300' });
+      }
+      if (path === '/air') {
+        const lat = parseFloat(url.searchParams.get('lat')), lon = parseFloat(url.searchParams.get('lon'));
+        if (!isFinite(lat) || !isFinite(lon)) throw fail('lat, lon 값이 필요해요');
+        return json({ ok: true, ...(await getAir(env, lat, lon)) }, 200, { ...cors, 'Cache-Control': 'public, max-age=600' });
       }
       if (path === '/obs') {
         if (!env.PUSH) throw fail('Worker에 저장소(KV, 이름 PUSH)가 연결되지 않았어요', 500);
@@ -159,7 +166,7 @@ async function callApi(key, url, params, ttl = 10 * 60e3) {
   const h = j?.response?.header;
   if (h?.resultCode === '03') return null;                        // NO_DATA: 아직 발표 전이거나 해당 자료 없음
   if (h?.resultCode !== '00') throw new Error(explain(h?.resultMsg || '알 수 없는 오류'));
-  let items = j.response.body?.items?.item || [];
+  let items = j.response.body?.items?.item || j.response.body?.items || [];
   if (!Array.isArray(items)) items = [items];
   memo.set(id, { at: Date.now(), items });
   if (memo.size > 300) memo.delete(memo.keys().next().value);
@@ -348,6 +355,53 @@ function matchWarnings(t6, t7, sido, sigungu, dong = '') {
   const prelim = t7.replace(/\r/g, '').split(/\n/).map(s => s.trim())
     .filter(s => s && !/없음/.test(s) && alias.some(a => s.includes(a))).slice(0, 4);
   return { active, prelim, nation };
+}
+
+/* ---------- 에어코리아 실시간 미세먼지 ---------- */
+// 측정소 목록(위경도 포함)은 KV에 7일 보관, 실시간 값은 시/도 단위로 한 번에 받아 그중 가까운 측정소를 골라요.
+const SIDO_SHORT = [['서울','서울'],['부산','부산'],['대구','대구'],['인천','인천'],['광주','광주'],['대전','대전'],['울산','울산'],['세종','세종'],
+  ['경기','경기'],['강원','강원'],['충청북','충북'],['충북','충북'],['충청남','충남'],['충남','충남'],['전라북','전북'],['전북','전북'],
+  ['전라남','전남'],['전남','전남'],['경상북','경북'],['경북','경북'],['경상남','경남'],['경남','경남'],['제주','제주']];
+function airSido(addr) { const t = String(addr || '').trim(); const m = SIDO_SHORT.find(([k]) => t.startsWith(k)); return m ? m[1] : null; }
+const km = (a, b, c, d) => { const R = 6371, D = Math.PI / 180, x = (d - b) * D * Math.cos((a + c) / 2 * D), y = (c - a) * D; return R * Math.sqrt(x * x + y * y); };
+async function airStations(env) {
+  const hit = memo.get('air:stations');
+  if (hit && Date.now() - hit.at < 864e5) return hit.items;
+  let list = env.PUSH ? await env.PUSH.get('air:stations', 'json') : null;
+  if (!list || Date.now() - list.at > 7 * 864e5) {
+    const items = await callApi(env.KMA_KEY, `${AIR}/MsrstnInfoInqireSvc/getMsrstnList`, { returnType: 'json', numOfRows: 1000, pageNo: 1 }, 864e5)
+      .catch(e => { throw new Error(/활용신청|등록되지/.test(e.message) ? '에어코리아 측정소정보 활용신청이 필요해요' : e.message); });
+    const st = (items || []).map(it => {
+      const a = parseFloat(it.dmX), b = parseFloat(it.dmY);
+      if (!isFinite(a) || !isFinite(b)) return null;
+      const [lat, lon] = a < b ? [a, b] : [b, a];          // 위도(33~39)가 경도(124~132)보다 작아요
+      return [it.stationName, lat, lon, airSido(it.addr), it.addr || ''];
+    }).filter(x => x && x[3]);
+    if (!st.length) throw new Error('에어코리아 측정소 목록이 비어 있어요');
+    list = { at: Date.now(), st };
+    if (env.PUSH) await env.PUSH.put('air:stations', JSON.stringify(list)).catch(() => {});
+  }
+  memo.set('air:stations', { at: Date.now(), items: list.st });
+  return list.st;
+}
+const airNum = v => { const x = parseFloat(v); return isFinite(x) && x >= 0 ? x : null; };   // '-'(점검·미수신) 제외
+async function getAir(env, lat, lon) {
+  if (!env.KMA_KEY) throw fail('Worker에 KMA_KEY(인증키)가 설정되지 않았어요', 500);
+  const near = (await airStations(env)).map(s => ({ s, d: km(lat, lon, s[1], s[2]) })).sort((a, b) => a.d - b.d).slice(0, 4);
+  if (!near.length || near[0].d > 40) throw fail('가까운 대기질 측정소가 없어요', 404);
+  const bySido = {};
+  for (const { s, d } of near) {
+    if (!bySido[s[3]]) bySido[s[3]] = await callApi(env.KMA_KEY, `${AIR}/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty`,
+      { returnType: 'json', numOfRows: 200, pageNo: 1, sidoName: s[3], ver: '1.3' }, 10 * 60e3)
+      .catch(e => { throw new Error(/활용신청|등록되지/.test(e.message) ? '에어코리아 대기오염정보 활용신청이 필요해요' : e.message); });
+    const it = (bySido[s[3]] || []).find(x => x.stationName === s[0]);
+    if (!it) continue;
+    const pm10 = airNum(it.pm10Value), pm25 = airNum(it.pm25Value);
+    if (pm10 == null && pm25 == null) continue;            // 점검 중이면 다음으로 가까운 측정소
+    return { station: s[0], addr: s[4], dist: Math.round(d * 10) / 10, dataTime: it.dataTime || null,
+      pm10, pm25, pm10Grade: airNum(it.pm10Grade), pm25Grade: airNum(it.pm25Grade), khai: airNum(it.khaiValue), khaiGrade: airNum(it.khaiGrade), o3: airNum(it.o3Value) };
+  }
+  throw new Error('가까운 측정소들이 지금 점검 중이거나 값을 보내지 않고 있어요');
 }
 
 /* ---------- 관측 기록 (성적표 채점용) ---------- */

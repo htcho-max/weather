@@ -368,6 +368,7 @@ body.skyDark .fx{--drop:rgba(255,255,255,.5);--flake:rgba(255,255,255,.9)}
   <section data-unit="air">
     <h2>공기, 해와 달</h2>
     <div class="air" id="air"></div>
+    <p class="note" id="airNote" hidden></p>
     <div class="sunWrap" id="sun"></div>
     <div class="moon" id="moon"></div>
   </section>
@@ -412,7 +413,7 @@ body.skyDark .fx{--drop:rgba(255,255,255,.5);--flake:rgba(255,255,255,.9)}
 
 
   <p class="foot" id="updated"></p>
-  <p class="foot">날씨·대기질: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · 행정구역: 행정안전부 행정동 경계(2026.2) · 미세먼지 등급: 환경부 기준<span id="kmaFoot" hidden> · 관측·단기예보: 기상청(공공데이터포털)</span></p>
+  <p class="foot">날씨·대기질: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · 행정구역: 행정안전부 행정동 경계(2026.2) · 미세먼지 등급: 환경부 기준<span id="kmaFoot" hidden> · 관측·단기예보: 기상청(공공데이터포털)</span><span id="airFoot" hidden> · 대기질 실측: 한국환경공단 에어코리아(실시간 자료는 확정되지 않은 값이에요)</span></p>
 </main>
 
 <button type="button" class="viewBtn backSimple" id="toSimple">▲ 간단히 보기</button>
@@ -875,10 +876,17 @@ function renderAir(){
     const g = grade(v, table);
     return `<div><span>${label}</span><b class="${g[2]}">${g[1]}</b><small>${unit?r(v)+unit:''}${sub?sub:''}</small></div>`;
   };
+  const M = airFresh();
+  const pm10 = M?.pm10 ?? aq?.current?.pm10, pm25 = M?.pm25 ?? aq?.current?.pm2_5;
   $('air').innerHTML =
-    cell('미세먼지', aq?.current?.pm10, PM10, '㎍/㎥') +
-    cell('초미세먼지', aq?.current?.pm2_5, PM25, '㎍/㎥') +
+    cell('미세먼지', pm10, PM10, '㎍/㎥', M?.pm10!=null ? ' 실측' : '') +
+    cell('초미세먼지', pm25, PM25, '㎍/㎥', M?.pm25!=null ? ' 실측' : '') +
     cell('자외선', uvNow, UVG, '', `지금 ${uvNow!=null?uvNow.toFixed(0):'–'}<br>오늘 최대 ${uvMax!=null?uvMax.toFixed(0):'–'}`);
+  const note = $('airNote');
+  if(M){ note.textContent = `미세먼지는 에어코리아 ‘${M.station}’ 측정소(${M.dist}km) ${M.dataTime ? +M.dataTime.slice(11,13)+'시' : ''} 실측값이에요. 등급은 환경부 기준이고, 오늘·내일 최고 예상은 예보 모델 값이에요.`; note.hidden = false; }
+  else if(airSt.err && kmaBase() && isKorea(main.place)){ note.textContent = `에어코리아 실측을 받지 못해 예보 모델 값을 보여주고 있어요 (${airSt.err})`; note.hidden = false; }
+  else note.hidden = true;
+  $('airFoot').hidden = !M;
 }
 
 /* ---------- 해 ---------- */
@@ -1292,7 +1300,7 @@ async function loadKma(place, id, {silent=false}={}){
   const key = keyOf(place);
   if(!silent || kma.key!==key){ kma.now = kma.fcst = kma.err = null; }
   kma.key = key;
-  loadWarn(place, id);
+  loadWarn(place, id); loadAir(place, id);
   if(!kmaBase() || !isKorea(place)){ kma.now = kma.fcst = null; renderObs(); renderCompare(); if(main.wx) renderHourly(); return; }
   // 저장해 둔 값이 있으면 먼저 써요 (관측 3시간, 예보 6시간 이내)
   const c = cacheGet(place);
@@ -1364,6 +1372,19 @@ function hourAt(k){
   o.wet = ['rain','snow','storm'].includes(o.kind) || (o.mm ?? 0) >= 0.1;
   o.snow = o.kind==='snow';
   return o;
+}
+
+/* ---------- 에어코리아 실시간 미세먼지 (중계 서버 /air) ---------- */
+const airSt = {key:null, data:null, at:0, err:null};
+const airFresh = () => main.place && airSt.key===keyOf(main.place) && airSt.data && Date.now()-airSt.at < 2*3600e3 ? airSt.data : null;
+async function loadAir(place, id){
+  const key = keyOf(place);
+  if(airSt.key!==key){ airSt.data = null; airSt.err = null; }
+  airSt.key = key;
+  if(!kmaBase() || !isKorea(place)){ airSt.data = null; if(main.wx) renderAir(); return; }
+  try{ const j = await kmaGet(`/air?lat=${place.lat}&lon=${place.lon}`); if(airSt.key===key){ airSt.data = j; airSt.at = Date.now(); airSt.err = null; } }
+  catch(e){ if(airSt.key===key){ airSt.err = e.message; } }
+  if(id===reqId && main.wx){ renderAir(); renderSimple(); }
 }
 
 /* ---------- 기상특보 (중계 서버 /warn, '기상청_기상특보 조회서비스' 활용신청 필요) ---------- */
@@ -1443,6 +1464,7 @@ $('kmaTest').addEventListener('click', async ()=>{
     const extra = [];
     try{ await kmaGet(`/warn?sido=${encodeURIComponent('서울특별시')}&sigungu=`, u); extra.push('기상특보 ✓'); }catch(e){ extra.push(`기상특보 ✗ (${e.message})`); }
     try{ await kmaGet('/push/key', u); extra.push('비 알림 ✓'); }catch(e){ extra.push(`비 알림 ✗ (${e.message})`); }
+    try{ const a = await kmaGet('/air?lat=37.5665&lon=126.978', u); extra.push(`미세먼지 실측 ✓ (${a.station})`); }catch(e){ extra.push(`미세먼지 실측 ✗ (${e.message})`); }
     kmaMsg(`연결됐어요. 서울 ${deg(j.obs.t)} (${+j.base.slice(11,13)}시 기상청 관측) · ${extra.join(' · ')}${u!==kmaBase()?' — 저장 버튼을 눌러야 적용돼요':''}`);
   }catch(e){
     kmaMsg(`연결하지 못했어요: ${e.message==='Failed to fetch' ? '주소가 맞는지, Worker가 배포됐는지 확인해 주세요' : e.message}`);
@@ -2617,11 +2639,16 @@ function simpleAnswer(k){
     return ['👚','얇은 겉옷',`${deg(lo)}~${deg(hi)}`];
   }
   if(k==='air'){
-    const pm = main.aq?.dayMax?.[0];
-    if(!pm || pm.pm10==null || pm.pm2_5==null) return ['🌫️','공기 정보 없음','잠시 뒤 다시'];
-    const g = [grade(pm.pm2_5, PM25), grade(pm.pm10, PM10)].sort((a,b)=>b[2].localeCompare(a[2]))[0];
+    const M = airFresh(), pm = main.aq?.dayMax?.[0];
+    const now = M && M.pm10!=null && M.pm25!=null ? {pm10:M.pm10, pm2_5:M.pm25} : null;
+    const use = now || pm;
+    if(!use || use.pm10==null || use.pm2_5==null) return ['🌫️','공기 정보 없음','잠시 뒤 다시'];
+    const worst = x => [grade(x.pm2_5, PM25), grade(x.pm10, PM10)].sort((a,b)=>b[2].localeCompare(a[2]))[0];
+    const g = worst(use), later = now && pm && pm.pm10!=null && pm.pm2_5!=null ? worst(pm) : null;
     const face = g[2]==='g1' ? '😊' : g[2]==='g2' ? '🙂' : '😷';
-    return [face, `공기 ${g[1]}`, g[2]>='g3' ? '마스크 챙기세요' : `초미세 ${r(pm.pm2_5)}`];
+    if(g[2]>='g3') return [face, `공기 ${g[1]}`, '마스크 챙기세요'];
+    if(later && later[2]>='g3') return ['😷', `지금 ${g[1]}`, `오늘 ‘${later[1]}’까지 예상`];
+    return [face, `공기 ${g[1]}`, `초미세 ${r(use.pm2_5)}${now?' 실측':''}`];
   }
   if(k==='uv'){
     const uv = dd.uv_index_max[0];
