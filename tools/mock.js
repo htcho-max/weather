@@ -3,7 +3,7 @@ const today=new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
 const addD=(d,n)=>new Date(Date.parse(d)+n*864e5).toISOString().slice(0,10);
 const range=(a,n)=>Array.from({length:n},(_,i)=>addD(a,i));
 const hrs=d=>{const o=[];for(let x of d)for(let h=0;h<24;h++)o.push(x+'T'+String(h).padStart(2,'0')+':00');return o};
-const days=range(addD(today,-1),8), D7=days.slice(1), H=hrs(days), H7=hrs(D7);
+const days=range(addD(today,-1),17), D7=days.slice(1,8), H=hrs(days), H7=hrs(D7);
 const nowT=new Date(Date.now()+9*3600e3).toISOString().slice(0,13)+':00';
 window.__calls=[];
 const J=o=>Promise.resolve({ok:true,json:async()=>o});
@@ -32,5 +32,5 @@ window.fetch=(u)=>{ __calls.push(u);
   ids.forEach((id,k)=>{const x=one(id,k);const s=multi?'_'+id:'';for(const a in x.d)o.daily[a+s]=x.d[a];for(const a in x.h)o.hourly[a+s]=x.h[a];});return J(o);}
  return J({utc_offset_seconds:32400,current:{time:nowT,temperature_2m:17,apparent_temperature:16,relative_humidity_2m:50,weather_code:1,wind_speed_10m:2.3,is_day:1,precipitation:0},
   hourly:{time:H,temperature_2m:H.map((_,i)=>11+5*Math.sin((i-9)/24*2*Math.PI)),apparent_temperature:H.map(()=>15),weather_code:H.map(()=>1),precipitation_probability:H.map(()=>5),is_day:H.map((_,i)=>i%24>6&&i%24<18?1:0),uv_index:H.map(()=>4),relative_humidity_2m:H.map(()=>45),wind_speed_10m:H.map((_,i)=>2+(i%7)),precipitation:H.map((_,i)=>i%24>=15&&i%24<=17?1.2:0),wind_direction_10m:H.map((_,i)=>(i*15)%360)},
-  daily:{time:days,weather_code:days.map(()=>1),temperature_2m_max:days.map(()=>19),temperature_2m_min:days.map(()=>7),precipitation_probability_max:days.map(()=>10),sunrise:days.map(d=>d+'T06:50'),sunset:days.map(d=>d+'T17:40'),daylight_duration:days.map(()=>39000),uv_index_max:days.map(()=>5),wind_speed_10m_max:days.map(()=>4)}});
+  daily:{time:days,weather_code:days.map(()=>1),temperature_2m_max:days.map((_,i)=>19-(i%5)),temperature_2m_min:days.map((_,i)=>7+(i%3)),precipitation_probability_max:days.map(()=>10),sunrise:days.map(d=>d+'T06:50'),sunset:days.map(d=>d+'T17:40'),daylight_duration:days.map(()=>39000),uv_index_max:days.map(()=>5),wind_speed_10m_max:days.map(()=>4)}});
 };})();
