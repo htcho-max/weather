@@ -9,7 +9,8 @@ window.__calls=[];
 const J=o=>Promise.resolve({ok:true,json:async()=>o});
 if(!localStorage.getItem('weather:favs')) localStorage.setItem('weather:favs', JSON.stringify([{name:'강릉시 교1동',lat:37.76,lon:128.89,sel:null},{name:'제주시 노형동',lat:33.48,lon:126.48,sel:null}]));
 const one=(id,k)=>{const kma=id.startsWith('kma');return {d:{temperature_2m_max:D7.map((_,i)=>kma?null:17+Math.sin(i+k)*2),temperature_2m_min:D7.map(()=>kma?null:6+k*0.4),precipitation_sum:D7.map((_,i)=>kma?null:(i===2?k:0)),wind_speed_10m_max:D7.map(()=>kma?null:3+k*0.5)},h:{temperature_2m:H7.map((_,i)=>kma?null:12+k*0.3+5*Math.sin(i/4)),precipitation:H7.map(()=>kma?null:0),wind_speed_10m:H7.map(()=>kma?null:2)}}};
-window.fetch=(u)=>{ __calls.push(u);
+// window.__delays = {'air-quality': 9000, 'forecast?': 3000} 처럼 주소 일부별로 늦게 답하게 할 수 있어요
+const realMock=(u)=>{
  if(window.__offline) return Promise.reject(new TypeError('Failed to fetch'));
  // 기상청 중계 서버(worker/kma-worker.js) 흉내: 주소에 /now?, /fcst? 가 들어가면
  if(window.__kmaFail && /\/(now|fcst)\?/.test(u)) return J({ok:false,error:window.__kmaFail});
@@ -33,4 +34,6 @@ window.fetch=(u)=>{ __calls.push(u);
  return J({utc_offset_seconds:32400,current:{time:nowT,temperature_2m:17,apparent_temperature:16,relative_humidity_2m:50,weather_code:1,wind_speed_10m:2.3,is_day:1,precipitation:0},
   hourly:{time:H,temperature_2m:H.map((_,i)=>11+5*Math.sin((i-9)/24*2*Math.PI)),apparent_temperature:H.map(()=>15),weather_code:H.map(()=>1),precipitation_probability:H.map(()=>5),is_day:H.map((_,i)=>i%24>6&&i%24<18?1:0),uv_index:H.map(()=>4),relative_humidity_2m:H.map(()=>45),wind_speed_10m:H.map((_,i)=>2+(i%7)),precipitation:H.map((_,i)=>i%24>=15&&i%24<=17?1.2:0),wind_direction_10m:H.map((_,i)=>(i*15)%360)},
   daily:{time:days,weather_code:days.map(()=>1),temperature_2m_max:days.map((_,i)=>19-(i%5)),temperature_2m_min:days.map((_,i)=>7+(i%3)),precipitation_probability_max:days.map(()=>10),sunrise:days.map(d=>d+'T06:50'),sunset:days.map(d=>d+'T17:40'),daylight_duration:days.map(()=>39000),uv_index_max:days.map(()=>5),wind_speed_10m_max:days.map(()=>4)}});
-};})();
+};
+window.fetch=(u)=>{ __calls.push(u); const d=Object.entries(window.__delays||{}).find(([k])=>u.includes(k)); return d ? new Promise(r=>setTimeout(()=>r(realMock(u)), d[1])) : realMock(u); };
+})();

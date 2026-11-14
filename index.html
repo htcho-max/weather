@@ -614,15 +614,18 @@ async function fetchPlace(place){
     + `&timezone=auto&past_days=1&forecast_days=16&wind_speed_unit=ms`;
   const aqUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${place.lat}&longitude=${place.lon}`
     + `&current=pm10,pm2_5&hourly=pm10,pm2_5&timezone=auto&forecast_days=2`;
-  const [wx, aq] = await Promise.all([
-    fetch(wxUrl).then(res=>{ if(!res.ok) throw new Error(res.status); return res.json(); }),
-    fetch(aqUrl).then(res=>res.ok?res.json():null).catch(()=>null)
-  ]);
+  // 날씨를 먼저 받고(10초 안에 안 오면 한 번 더), 대기질은 따로 받아 나중에 채워요
+  const aqP = fetchT(aqUrl, 10000).then(res=>res.ok?res.json():null).catch(()=>null);
+  const getWx = ms => fetchT(wxUrl, ms).then(res=>{ if(!res.ok) throw new Error(res.status); return res.json(); });
+  const wx = await getWx(10000).catch(()=>getWx(15000));
   // 어제(past_days=1)를 분리해 daily는 오늘부터 시작하게
   const y={}, t={};
   for(const k in wx.daily){ y[k]=wx.daily[k][0]; t[k]=wx.daily[k].slice(1); }
   wx.daily = t; wx.yday = y;
   wx.h0 = Math.max(0, wx.hourly.time.findIndex(x => x >= wx.current.time.slice(0,13)));
+  return {wx, aqP: aqP.then(aq=>withDayMax(aq, wx))};
+}
+function withDayMax(aq, wx){
   if(aq && aq.hourly){
     // 오늘(0)·내일(1)의 시간별 최댓값
     aq.dayMax = wx.daily.time.slice(0,2).map(day=>{
@@ -631,7 +634,12 @@ async function fetchPlace(place){
       return idx.length ? {pm10:mx('pm10'), pm2_5:mx('pm2_5')} : null;
     });
   }
-  return {wx, aq};
+  return aq;
+}
+// 시간 제한이 있는 fetch: 응답이 너무 늦으면 끊고 다음 방법으로 넘어가요
+function fetchT(url, ms=10000){
+  const ctl = new AbortController(), t = setTimeout(()=>ctl.abort(), ms);
+  return fetch(url, {signal:ctl.signal}).finally(()=>clearTimeout(t));
 }
 
 /* ---------- 지역 선택 드롭다운 (재사용) ---------- */
@@ -718,6 +726,7 @@ function cachePut(p, patch){
 const ago = at => { const m = Math.round((Date.now()-at)/60000); return m<1 ? '조금 전에' : m<60 ? `${m}분 전에` : `${Math.floor(m/60)}시간 전에`; };
 function showStale(at, state){
   const el = $('stale');
+  if(state==='slow'){ el.textContent = at ? `🐢 날씨 서버 응답이 느려요. ${ago(at)} 받은 날씨를 먼저 보여주고 있어요` : '🐢 날씨 서버 응답이 느려요. 조금만 기다려 주세요'; el.hidden = false; return; }
   if(!at){ el.hidden = true; return; }
   el.textContent = state==='loading' ? `🔄 ${ago(at)} 받은 날씨예요. 새 정보를 받는 중이에요`
     : `📡 인터넷에 연결되지 않아 ${ago(at)} 받은 날씨를 보여주고 있어요`;
@@ -732,7 +741,7 @@ async function load(place, {silent=false}={}){
   renderPickMsg();
   renderFavs();
   const c = cacheGet(place);
-  const usable = c && c.at && Date.now()-c.at < 24*3600e3;
+  const usable = c && c.at && Date.now()-c.at < 72*3600e3;      // 사흘 안의 저장본은 먼저 보여줘요
   if(!silent){
     main.wx = null; main.aq = null; main.normals = null; main.fetchedAt = 0;
     if(usable && c.wx){
@@ -743,16 +752,25 @@ async function load(place, {silent=false}={}){
     } else showStale(null);
     if(usable && c.cmp){ cmp.data = c.cmp; renderCompare(); renderOutfit(); }
   }
-  loadCompare(place, id, {keep: silent || !!(usable && c.cmp)});
-  loadNormals(place, id);
-  loadKma(place, id, {silent});
+  loadKma(place, id, {silent});                       // 기상청(중계 서버)은 다른 서버라 바로 시작
+  // 무거운 요청(여러 기관 비교·평년값)은 지금 날씨가 온 뒤에 시작해서 첫 화면을 빨리 띄워요
+  let restStarted = false;
+  const startRest = () => { if(restStarted || id!==reqId) return; restStarted = true;
+    loadCompare(place, id, {keep: silent || !!(usable && c.cmp)}); loadNormals(place, id); };
+  const restTimer = setTimeout(startRest, 4000);
+  const slowTimer = setTimeout(()=>{ if(id===reqId) showStale(main.wx ? main.fetchedAt : null, 'slow'); }, 6000);
   try{
-    const {wx, aq} = await fetchPlace(place);
+    const {wx, aqP} = await fetchPlace(place);
+    clearTimeout(slowTimer);
     if(id!==reqId) return;
-    main.wx = wx; main.aq = aq; main.fetchedAt = Date.now();
-    cachePut(place, {at:main.fetchedAt, wx, aq});
+    main.wx = wx; main.aq = main.aq || null; main.fetchedAt = Date.now();
+    cachePut(place, {at:main.fetchedAt, wx, aq:main.aq});
     renderMain(); showStale(null);
+    clearTimeout(restTimer); startRest();
+    aqP.then(aq=>{ if(id!==reqId || !aq) return; main.aq = aq; cachePut(place, {aq});
+      renderAir(); renderOutfit(); renderSimple(); });
   }catch(e){
+    clearTimeout(slowTimer); clearTimeout(restTimer); startRest();
     if(id!==reqId) return;
     if(main.wx) showStale(main.fetchedAt, 'offline');
     else $('hourly').innerHTML = $('outfit').innerHTML = `<p class="status">날씨를 받아오지 못했어요. 인터넷 연결을 확인한 뒤 새로고침해 주세요.</p>`;
@@ -1747,7 +1765,7 @@ async function loadRegion(place){
   store.set('weather:rcPlace', place);
   renderRegion();
   try{
-    const {wx, aq} = await fetchPlace(place);
+    const {wx, aqP} = await fetchPlace(place); const aq = await aqP;
     if(id!==rcReq) return;
     rc.wx = wx; rc.aq = aq;
   }catch(e){ if(id!==rcReq) return; rc.wx = 'error'; }
@@ -2860,14 +2878,12 @@ const openSaved = () => {
   else { mainPicker.set(['0','','']); load(mainPicker.place()); }   // 처음엔 서울특별시
 };
 if(startMode==='gps'){
-  // 위치를 기다리는 동안 1.5초가 지나면 마지막 지역을 먼저 보여주고, 위치가 나오면 바꿔요
-  let shown = false;
-  const t = setTimeout(()=>{ shown = true; openSaved(); }, 1500);
-  $('place').textContent = '📍 위치 확인 중';
+  // 마지막 지역(저장된 날씨)을 바로 보여주고, 위치를 찾아 다른 곳이면 바꿔요
+  openSaved();
   locateMe(m=>{ $('pickMsg').textContent = m; }).then(p=>{
-    clearTimeout(t);
-    if(p){ if(!shown || !main.place || keyOf(main.place)!==keyOf(p)) load(p); else { main.place.gps = true; $('place').textContent = '📍 ' + p.name; } }
-    else if(!shown) openSaved();
+    if(!p) return;
+    if(!main.place || keyOf(main.place)!==keyOf(p)) load(p);
+    else { main.place.gps = true; store.set('weather:place', main.place); $('place').textContent = '📍 ' + p.name; }
   });
 } else openSaved();
 const savedRc = refreshPlace(store.get('weather:rcPlace', null));
