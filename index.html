@@ -616,8 +616,8 @@ async function fetchPlace(place){
     + `&current=pm10,pm2_5&hourly=pm10,pm2_5&timezone=auto&forecast_days=2`;
   // 날씨를 먼저 받고(10초 안에 안 오면 한 번 더), 대기질은 따로 받아 나중에 채워요
   const aqP = fetchT(aqUrl, 10000).then(res=>res.ok?res.json():null).catch(()=>null);
-  const getWx = ms => fetchT(wxUrl, ms).then(res=>{ if(!res.ok) throw new Error(res.status); return res.json(); });
-  const wx = await getWx(10000).catch(()=>getWx(15000));
+  const getWx = ms => fetchT(wxUrl, ms).then(res=>{ if(!res.ok) throw new Error(String(res.status)); return res.json(); });
+  const wx = await getWx(10000).catch(e=>{ if(e.message==='429') throw e; return getWx(15000); });   // 사용량 초과(429)면 다시 하지 않아요
   // 어제(past_days=1)를 분리해 daily는 오늘부터 시작하게
   const y={}, t={};
   for(const k in wx.daily){ y[k]=wx.daily[k][0]; t[k]=wx.daily[k].slice(1); }
@@ -726,6 +726,8 @@ function cachePut(p, patch){
 const ago = at => { const m = Math.round((Date.now()-at)/60000); return m<1 ? '조금 전에' : m<60 ? `${m}분 전에` : `${Math.floor(m/60)}시간 전에`; };
 function showStale(at, state){
   const el = $('stale');
+  if(state==='kma'){ el.textContent = '🛰️ 날씨 서버(Open-Meteo)가 응답하지 않아 기상청 자료로 보여주고 있어요. 주간 예보는 4~5일까지만 나와요'; el.hidden = false; return; }
+  if(state==='limit'){ el.textContent = `⏳ 날씨 서버(Open-Meteo)가 요청이 많다며 잠시 막았어요(무료 사용량 제한). 조금 뒤 다시 열어 주세요${at?` · ${ago(at)} 받은 날씨를 보여주고 있어요`:''}`; el.hidden = false; return; }
   if(state==='slow'){ el.textContent = at ? `🐢 날씨 서버 응답이 느려요. ${ago(at)} 받은 날씨를 먼저 보여주고 있어요` : '🐢 날씨 서버 응답이 느려요. 조금만 기다려 주세요'; el.hidden = false; return; }
   if(!at){ el.hidden = true; return; }
   el.textContent = state==='loading' ? `🔄 ${ago(at)} 받은 날씨예요. 새 정보를 받는 중이에요`
@@ -752,13 +754,22 @@ async function load(place, {silent=false}={}){
     } else showStale(null);
     if(usable && c.cmp){ cmp.data = c.cmp; renderCompare(); renderOutfit(); }
   }
-  loadKma(place, id, {silent});                       // 기상청(중계 서버)은 다른 서버라 바로 시작
+  const kmaP = loadKma(place, id, {silent});          // 기상청(중계 서버)은 다른 서버라 바로 시작
   // 무거운 요청(여러 기관 비교·평년값)은 지금 날씨가 온 뒤에 시작해서 첫 화면을 빨리 띄워요
   let restStarted = false;
   const startRest = () => { if(restStarted || id!==reqId) return; restStarted = true;
     loadCompare(place, id, {keep: silent || !!(usable && c.cmp)}); loadNormals(place, id); };
   const restTimer = setTimeout(startRest, 4000);
-  const slowTimer = setTimeout(()=>{ if(id===reqId) showStale(main.wx ? main.fetchedAt : null, 'slow'); }, 6000);
+  // Open-Meteo가 늦거나 멈추면: 저장본이 없을 때 기상청 자료로 임시 화면을 만들어요
+  const fallback = async () => {
+    if(id!==reqId || (main.wx && !main.wx.kmaOnly)) return false;
+    await kmaP.catch(()=>{});
+    if(id!==reqId || (main.wx && !main.wx.kmaOnly)) return false;
+    const w = wxFromKma(place); if(!w) return false;
+    main.wx = w; renderMain(); showStale(null, 'kma'); return true;
+  };
+  const slowTimer = setTimeout(async ()=>{ if(id!==reqId) return;
+    if(!(await fallback())) showStale(main.wx ? main.fetchedAt : null, 'slow'); }, 6000);
   try{
     const {wx, aqP} = await fetchPlace(place);
     clearTimeout(slowTimer);
@@ -772,6 +783,8 @@ async function load(place, {silent=false}={}){
   }catch(e){
     clearTimeout(slowTimer); clearTimeout(restTimer); startRest();
     if(id!==reqId) return;
+    if(main.wx?.kmaOnly || await fallback()){ showStale(null, 'kma'); return; }
+    if(e.message==='429'){ showStale(main.wx ? main.fetchedAt : null, 'limit'); if(main.wx) return; }
     if(main.wx) showStale(main.fetchedAt, 'offline');
     else $('hourly').innerHTML = $('outfit').innerHTML = `<p class="status">날씨를 받아오지 못했어요. 인터넷 연결을 확인한 뒤 새로고침해 주세요.</p>`;
   }
@@ -1473,6 +1486,54 @@ function hourAt(k){
   o.wet = ['rain','snow','storm'].includes(o.kind) || (o.mm ?? 0) >= 0.1;
   o.snow = o.kind==='snow';
   return o;
+}
+
+/* ---------- Open-Meteo가 멈췄을 때: 기상청 자료로 같은 모양의 날씨 만들기 ---------- */
+function wxFromKma(place){
+  const F = kma.fcst, O = kma.now;
+  if(!F || kma.key!==keyOf(place) || !F.hourly?.time?.length) return null;
+  const H = F.hourly, KST = 9*3600e3;
+  const iso = ms => new Date(ms + KST).toISOString().slice(0,16);
+  const nowHour = iso(Date.now()).slice(0,13) + ':00';
+  const codeOf = k => ({clear:0, partly:2, cloud:3, fog:45, rain:61, snow:71, storm:95})[k] ?? 3;
+  const isDayAt = t => SunCalc.getPosition(new Date(Date.parse(t+':00+09:00')), place.lat, place.lon).altitude > 0 ? 1 : 0;
+  const hourly = {time:[], temperature_2m:[], apparent_temperature:[], weather_code:[], precipitation_probability:[], precipitation:[],
+    is_day:[], uv_index:[], relative_humidity_2m:[], wind_speed_10m:[], wind_direction_10m:[]};
+  H.time.forEach((t,i)=>{
+    const k = skyKind(H.pty[i], H.sky[i]) || 'cloud';
+    hourly.time.push(t); hourly.temperature_2m.push(H.tmp[i]); hourly.apparent_temperature.push(H.tmp[i]);
+    hourly.weather_code.push(codeOf(k)); hourly.precipitation_probability.push(H.pop[i] ?? 0); hourly.precipitation.push(H.pcp[i] ?? 0);
+    hourly.is_day.push(isDayAt(t)); hourly.uv_index.push(null); hourly.relative_humidity_2m.push(H.reh[i]);
+    hourly.wind_speed_10m.push(H.wsd[i]); hourly.wind_direction_10m.push(H.vec?.[i] ?? null);
+  });
+  const today = nowHour.slice(0,10);
+  const days = [...new Set(H.time.map(t=>t.slice(0,10)))].filter(d=>d>=today);
+  const sun = d => { const tt = SunCalc.getTimes(new Date(Date.parse(d+'T12:00:00+09:00')), place.lat, place.lon, 0, 540);
+    return {rise: tt.sunrise ? iso(tt.sunrise.getTime()) : d+'T06:30', set: tt.sunset ? iso(tt.sunset.getTime()) : d+'T17:30',
+      len: tt.sunrise && tt.sunset ? (tt.sunset - tt.sunrise)/1000 : 39600}; };
+  const KR = ['clear','partly','cloud','fog','rain','snow','storm'];
+  const daily = {time:[], weather_code:[], temperature_2m_max:[], temperature_2m_min:[], precipitation_probability_max:[], sunrise:[], sunset:[],
+    daylight_duration:[], uv_index_max:[], wind_speed_10m_max:[]};
+  days.forEach(d=>{
+    const ix = H.time.map((t,i)=>t.startsWith(d)?i:-1).filter(i=>i>=0);
+    const ts = ix.map(i=>H.tmp[i]).filter(v=>v!=null), j = F.daily.time.indexOf(d);
+    const worst = ix.map(i=>skyKind(H.pty[i], H.sky[i]) || 'cloud').sort((a,b)=>KR.indexOf(b)-KR.indexOf(a))[0] || 'cloud';
+    const sn = sun(d);
+    daily.time.push(d); daily.weather_code.push(codeOf(worst));
+    daily.temperature_2m_max.push(F.daily.tmx[j] ?? (ts.length ? Math.max(...ts) : null));
+    daily.temperature_2m_min.push(F.daily.tmn[j] ?? (ts.length ? Math.min(...ts) : null));
+    daily.precipitation_probability_max.push(Math.max(0, ...ix.map(i=>H.pop[i] ?? 0)));
+    daily.sunrise.push(sn.rise); daily.sunset.push(sn.set); daily.daylight_duration.push(sn.len); daily.uv_index_max.push(null);
+    daily.wind_speed_10m_max.push(Math.max(0, ...ix.map(i=>H.wsd[i] ?? 0)));
+  });
+  if(!daily.time.length) return null;
+  const h0 = Math.max(0, hourly.time.findIndex(t=>t>=nowHour));
+  const x = O?.obs || {}, k0 = skyKind(x.pty, H.sky[h0]) || 'cloud';
+  const yd = new Date(Date.parse(today+'T12:00:00+09:00') - 864e5).toISOString().slice(0,10);
+  return { kmaOnly:true, utc_offset_seconds:32400, h0, hourly, daily,
+    yday: {daylight_duration: sun(yd).len, temperature_2m_max:null, temperature_2m_min:null},
+    current: {time: nowHour, temperature_2m: x.t ?? H.tmp[h0], apparent_temperature: x.t ?? H.tmp[h0], relative_humidity_2m: x.rh ?? H.reh[h0],
+      weather_code: codeOf(k0), wind_speed_10m: x.wind ?? H.wsd[h0], wind_direction_10m: x.vec ?? H.vec?.[h0] ?? null, is_day: isDayAt(nowHour), precipitation: x.rain1h ?? 0} };
 }
 
 /* ---------- 에어코리아 실시간 미세먼지 (중계 서버 /air) ---------- */
@@ -2372,7 +2433,7 @@ function getMoonTimes(date, lat, lng, utcOffset) {
 
     return result;
 }
-return {getMoonTimes, getMoonIllumination};})();
+return {getMoonTimes, getMoonIllumination, getTimes, getPosition};})();
 
 /* ---------- 현지 시각 (해외) ---------- */
 const placeNow = wx => new Date(Date.now() + wx.utc_offset_seconds*1000).toISOString().slice(0,16);
@@ -2391,11 +2452,13 @@ function renderClock(){
 const doy = day => { const [y,m,d] = day.split('-').map(Number); return Math.round((Date.UTC(2024,m-1,d)-Date.UTC(2024,0,1))/864e5); };
 function normalFor(day){ const i = doy(day); return {max:main.normals.max[i], min:main.normals.min[i]}; }
 async function loadNormals(place, id){
-  const key = `weather:normals:${(+place.lat).toFixed(2)},${(+place.lon).toFixed(2)}`;
-  let N = store.get(key, null);
+  // 평년값은 30년치라 Open-Meteo 사용량을 많이 써요(약 780회분). 0.25° 칸(과거 자료 해상도와 같음)으로 묶어 가까운 동네끼리 함께 써요
+  const q = v => (Math.round(v*4)/4).toFixed(2), qlat = q(+place.lat), qlon = q(+place.lon);
+  const key = `weather:normals:${qlat},${qlon}`;
+  let N = store.get(key, null) || store.get(`weather:normals:${(+place.lat).toFixed(2)},${(+place.lon).toFixed(2)}`, null);
   if(!N){
     try{
-      const res = await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${place.lat}&longitude=${place.lon}&start_date=1991-01-01&end_date=2020-12-31&daily=temperature_2m_max,temperature_2m_min&timezone=auto`);
+      const res = await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${qlat}&longitude=${qlon}&start_date=1991-01-01&end_date=2020-12-31&daily=temperature_2m_max,temperature_2m_min&timezone=auto`);
       if(!res.ok) throw new Error(res.status);
       const d = await res.json();
       // 날짜(1~366)별 30년 평균 → 앞뒤 3일 이동평균으로 다듬기
