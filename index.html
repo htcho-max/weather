@@ -615,8 +615,9 @@ async function fetchPlace(place){
   const aqUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${place.lat}&longitude=${place.lon}`
     + `&current=pm10,pm2_5&hourly=pm10,pm2_5&timezone=auto&forecast_days=2`;
   // 날씨를 먼저 받고(10초 안에 안 오면 한 번 더), 대기질은 따로 받아 나중에 채워요
-  const aqP = fetchT(aqUrl, 10000).then(res=>res.ok?res.json():null).catch(()=>null);
-  const getWx = ms => fetchT(wxUrl, ms).then(res=>{ if(!res.ok) throw new Error(String(res.status)); return res.json(); });
+  const aqP = omFetch(aqUrl, 10000).then(res=>res.ok?res.json():null).catch(()=>null);
+  const getWx = ms => omFetch(wxUrl, ms).then(async res=>{ if(!res.ok) throw new Error(String(res.status));
+    const j = await res.json(); j.servedAge = +(res.headers?.get?.('X-Haneul-Age') || 0); return j; });
   const wx = await getWx(10000).catch(e=>{ if(e.message==='429') throw e; return getWx(15000); });   // 사용량 초과(429)면 다시 하지 않아요
   // 어제(past_days=1)를 분리해 daily는 오늘부터 시작하게
   const y={}, t={};
@@ -640,6 +641,20 @@ function withDayMax(aq, wx){
 function fetchT(url, ms=10000){
   const ctl = new AbortController(), t = setTimeout(()=>ctl.abort(), ms);
   return fetch(url, {signal:ctl.signal}).finally(()=>clearTimeout(t));
+}
+// Open-Meteo 요청: 기상청 중계 서버가 있으면 그쪽을 거쳐요(잠시 저장해 둔 값을 바로 주고, Open-Meteo가 멈추면 마지막 값을 줘요).
+// 중계 서버가 안 되면 예전처럼 Open-Meteo에 직접 물어봐요.
+let omViaWorker = true;
+async function omFetch(url, ms=10000){
+  if(kmaBase() && omViaWorker){
+    try{
+      const res = await fetchT(`${kmaBase()}/om?u=${encodeURIComponent(url)}`, ms + 2000);
+      if(res.ok) return res;
+      if(res.status===404){ omViaWorker = false; }          // 예전 Worker(/om 없음)면 이번엔 직접
+      else if(res.status!==429 && res.status!==504) return res;
+    }catch(e){}
+  }
+  return fetchT(url, ms);
 }
 
 /* ---------- 지역 선택 드롭다운 (재사용) ---------- */
@@ -726,6 +741,7 @@ function cachePut(p, patch){
 const ago = at => { const m = Math.round((Date.now()-at)/60000); return m<1 ? '조금 전에' : m<60 ? `${m}분 전에` : `${Math.floor(m/60)}시간 전에`; };
 function showStale(at, state){
   const el = $('stale');
+  if(state==='proxyStale'){ el.textContent = `🛰️ 날씨 서버(Open-Meteo)가 느려서 ${ago(at)} 받아 둔 예보를 보여주고 있어요. 지금 기온은 기상청 관측값이에요`; el.hidden = false; return; }
   if(state==='kma'){ el.textContent = '🛰️ 날씨 서버(Open-Meteo)가 응답하지 않아 기상청 자료로 보여주고 있어요. 주간 예보는 4~5일까지만 나와요'; el.hidden = false; return; }
   if(state==='limit'){ el.textContent = `⏳ 날씨 서버(Open-Meteo)가 요청이 많다며 잠시 막았어요(무료 사용량 제한). 조금 뒤 다시 열어 주세요${at?` · ${ago(at)} 받은 날씨를 보여주고 있어요`:''}`; el.hidden = false; return; }
   if(state==='slow'){ el.textContent = at ? `🐢 날씨 서버 응답이 느려요. ${ago(at)} 받은 날씨를 먼저 보여주고 있어요` : '🐢 날씨 서버 응답이 느려요. 조금만 기다려 주세요'; el.hidden = false; return; }
@@ -776,7 +792,9 @@ async function load(place, {silent=false}={}){
     if(id!==reqId) return;
     main.wx = wx; main.aq = main.aq || null; main.fetchedAt = Date.now();
     cachePut(place, {at:main.fetchedAt, wx, aq:main.aq});
-    renderMain(); showStale(null);
+    renderMain();
+    // 중계 서버가 Open-Meteo 대신 30분 넘은 저장값을 준 경우 알려 줘요
+    if(wx.servedAge > 1800) showStale(Date.now() - wx.servedAge*1000, 'proxyStale'); else showStale(null);
     clearTimeout(restTimer); startRest();
     aqP.then(aq=>{ if(id!==reqId || !aq) return; main.aq = aq; cachePut(place, {aq});
       renderAir(); renderOutfit(); renderSimple(); });
@@ -1242,7 +1260,7 @@ function fillDailyFromHourly(d){
 }
 
 async function fetchJSON(url){
-  const res = await fetch(url);
+  const res = await omFetch(url, 15000);
   const j = await res.json().catch(()=>null);
   if(!res.ok || !j || j.error) throw new Error(j?.reason || `서버 오류 ${res.status}`);
   return j;
@@ -2458,7 +2476,7 @@ async function loadNormals(place, id){
   let N = store.get(key, null) || store.get(`weather:normals:${(+place.lat).toFixed(2)},${(+place.lon).toFixed(2)}`, null);
   if(!N){
     try{
-      const res = await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${qlat}&longitude=${qlon}&start_date=1991-01-01&end_date=2020-12-31&daily=temperature_2m_max,temperature_2m_min&timezone=auto`);
+      const res = await omFetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${qlat}&longitude=${qlon}&start_date=1991-01-01&end_date=2020-12-31&daily=temperature_2m_max,temperature_2m_min&timezone=auto`, 25000);
       if(!res.ok) throw new Error(res.status);
       const d = await res.json();
       // 날짜(1~366)별 30년 평균 → 앞뒤 3일 이동평균으로 다듬기

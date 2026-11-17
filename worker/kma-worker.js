@@ -13,6 +13,7 @@
 //  GET  /warn?sido=&sigungu=&dong= 기상특보 현황 중 그 지역에 해당하는 것 ('기상청_기상특보 조회서비스' 활용신청 필요)
 //  GET  /obs?lat=&lon=              그 격자의 지난 날짜별 관측 최고·최저·강수 (매시 예약 실행이 쌓아요, KV 필요)
 //  GET  /air?lat=&lon=              가장 가까운 에어코리아 측정소의 실시간 미세먼지 ('에어코리아 대기오염정보'·'측정소정보' 활용신청 필요)
+//  GET  /om?u=<Open-Meteo 주소>      Open-Meteo 요청을 대신 받아 잠시 저장(같은 요청은 바로 답), 응답이 늦거나 멈추면 마지막 값을 돌려줘요 (KV 있으면 더 오래 기억)
 //  GET  /push/key                   웹 푸시 공개키 (처음 부를 때 자동으로 만들어 KV에 저장)
 //  POST /push/subscribe             {sub, name, lat, lon, go, back} 알림 구독 저장·갱신
 //  POST /push/unsubscribe           {endpoint}
@@ -35,14 +36,15 @@ export default {
     toGrid: (...a) => toGrid(...a), nowBase: (...a) => nowBase(...a), fcstBase: (...a) => fcstBase(...a), ultraBase: (...a) => ultraBase(...a),
     amount: (...a) => amount(...a), matchWarnings: (...a) => matchWarnings(...a), rainCheck: (...a) => rainCheck(...a),
     encryptPayload: (...a) => encryptPayload(...a), vapidJwt: (...a) => vapidJwt(...a), memo,
+    proxyOpenMeteo: (...a) => proxyOpenMeteo(...a), omTtl: (...a) => omTtl(...a), omMemo: () => omMemo,
     recordObs: (...a) => recordObs(...a), obsDays: (...a) => obsDays(...a), getAir: (...a) => getAir(...a), airSido: (...a) => airSido(...a),
   },
 
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const origin = request.headers.get('Origin') || '';
     const allowed = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
     const allowOrigin = !allowed.length ? '*' : allowed.includes(origin) ? origin : null;
-    const cors = allowOrigin ? { 'Access-Control-Allow-Origin': allowOrigin, 'Vary': 'Origin' } : {};
+    const cors = allowOrigin ? { 'Access-Control-Allow-Origin': allowOrigin, 'Vary': 'Origin', 'Access-Control-Expose-Headers': 'X-Haneul-Age, X-Haneul-Source' } : {};
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: { ...cors, 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' } });
@@ -61,6 +63,7 @@ export default {
         const out = await getWarn(env.KMA_KEY, url.searchParams.get('sido') || '', url.searchParams.get('sigungu') || '', url.searchParams.get('dong') || '');
         return json({ ok: true, ...out }, 200, { ...cors, 'Cache-Control': 'public, max-age=300' });
       }
+      if (path === '/om') return await proxyOpenMeteo(url.searchParams.get('u') || '', env, ctx, cors);
       if (path === '/air') {
         const lat = parseFloat(url.searchParams.get('lat')), lon = parseFloat(url.searchParams.get('lon'));
         if (!isFinite(lat) || !isFinite(lon)) throw fail('lat, lon 값이 필요해요');
@@ -355,6 +358,54 @@ function matchWarnings(t6, t7, sido, sigungu, dong = '') {
   const prelim = t7.replace(/\r/g, '').split(/\n/).map(s => s.trim())
     .filter(s => s && !/없음/.test(s) && alias.some(a => s.includes(a))).slice(0, 4);
   return { active, prelim, nation };
+}
+
+/* ---------- Open-Meteo 중계 (빠르게 + 멈췄을 때 마지막 값) ---------- */
+// 허용하는 주소만 받아요. 같은 주소는 정해진 시간 동안 저장해 둔 값을 바로 돌려주고,
+// Open-Meteo가 8초(예전 값이 있으면 4초) 안에 답하지 않거나 오류면 저장해 둔 마지막 값(최대 3일 전)을 돌려줘요.
+const OM_HOSTS = ['api.open-meteo.com', 'air-quality-api.open-meteo.com', 'archive-api.open-meteo.com'];
+const omMemo = new Map();
+function omTtl(u) {                                       // 저장해 둘 시간(초)
+  if (u.hostname.startsWith('archive')) return 30 * 86400;    // 평년값: 바뀌지 않아요
+  if (u.searchParams.has('past_days') && u.searchParams.get('past_days') === '31') return 6 * 3600;   // 성적표 실제 값
+  if (u.searchParams.has('models')) return 60 * 60;            // 여러 기관 비교
+  if (u.hostname.startsWith('air-quality')) return 30 * 60;
+  return 15 * 60;                                              // 지금 날씨·예보
+}
+async function proxyOpenMeteo(raw, env, ctx, cors) {
+  let u;
+  try { u = new URL(raw); } catch (e) { throw fail('Open-Meteo 주소가 필요해요'); }
+  if (u.protocol !== 'https:' || !OM_HOSTS.includes(u.hostname)) throw fail('허용되지 않은 주소예요');
+  const key = u.toString(), ttl = omTtl(u), now = Date.now();
+  const kvKey = 'om:' + await sha(key);
+  const out = (body, age, src, status = 200) => new Response(body, { status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': `public, max-age=${Math.min(ttl, 900)}`, 'X-Haneul-Age': String(Math.round(age)), 'X-Haneul-Source': src } });
+  // 1) 이 Worker가 기억하는 값
+  const m = omMemo.get(key);
+  if (m && now - m.at < ttl * 1000) return out(m.body, (now - m.at) / 1000, 'memo');
+  // 2) KV에 저장한 값
+  const kvOn = !!env.PUSH;
+  const stored = kvOn ? await env.PUSH.get(kvKey, 'json').catch(() => null) : null;
+  if (stored && now - stored.at < ttl * 1000) { omMemo.set(key, stored); return out(stored.body, (now - stored.at) / 1000, 'kv'); }
+  // 3) Open-Meteo에 직접 (8초 제한)
+  const last = m || stored;
+  try {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), last ? 4000 : 8000);   // 예전 값이 있으면 4초만 기다려요
+    const res = await fetch(key, { signal: ctl.signal, headers: { Accept: 'application/json' } }).finally(() => clearTimeout(t));
+    const body = await res.text();
+    if (!res.ok) {
+      if (last && now - last.at < 3 * 86400e3) return out(last.body, (now - last.at) / 1000, 'stale');
+      return out(body || JSON.stringify({ error: true, reason: `Open-Meteo 오류 ${res.status}` }), 0, 'upstream', res.status);
+    }
+    const rec = { at: now, body };
+    omMemo.set(key, rec);
+    if (omMemo.size > 200) omMemo.delete(omMemo.keys().next().value);
+    if (kvOn && body.length < 5e6) ctx?.waitUntil?.(env.PUSH.put(kvKey, JSON.stringify(rec), { expirationTtl: Math.max(3 * 86400, ttl * 2) }).catch(() => {}));
+    return out(body, 0, 'live');
+  } catch (e) {
+    if (last && now - last.at < 3 * 86400e3) return out(last.body, (now - last.at) / 1000, 'stale');
+    return out(JSON.stringify({ error: true, reason: 'Open-Meteo가 응답하지 않아요' }), 0, 'timeout', 504);
+  }
 }
 
 /* ---------- 에어코리아 실시간 미세먼지 ---------- */

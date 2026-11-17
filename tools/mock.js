@@ -6,11 +6,11 @@ const hrs=d=>{const o=[];for(let x of d)for(let h=0;h<24;h++)o.push(x+'T'+String
 const days=range(addD(today,-1),17), D7=days.slice(1,8), H=hrs(days), H7=hrs(D7);
 const nowT=new Date(Date.now()+9*3600e3).toISOString().slice(0,13)+':00';
 window.__calls=[];
-const J=o=>Promise.resolve({ok:true,json:async()=>o});
+const J=o=>Promise.resolve({ok:true,status:200,headers:{get:k=>k==='X-Haneul-Age'?String(window.__omAge||0):null},json:async()=>o});
 if(!localStorage.getItem('weather:favs')) localStorage.setItem('weather:favs', JSON.stringify([{name:'강릉시 교1동',lat:37.76,lon:128.89,sel:null},{name:'제주시 노형동',lat:33.48,lon:126.48,sel:null}]));
 const one=(id,k)=>{const kma=id.startsWith('kma');return {d:{temperature_2m_max:D7.map((_,i)=>kma?null:17+Math.sin(i+k)*2),temperature_2m_min:D7.map(()=>kma?null:6+k*0.4),precipitation_sum:D7.map((_,i)=>kma?null:(i===2?k:0)),wind_speed_10m_max:D7.map(()=>kma?null:3+k*0.5)},h:{temperature_2m:H7.map((_,i)=>kma?null:12+k*0.3+5*Math.sin(i/4)),precipitation:H7.map(()=>kma?null:0),wind_speed_10m:H7.map(()=>kma?null:2)}}};
 // window.__delays = {'air-quality': 9000, 'forecast?': 3000} 처럼 주소 일부별로 늦게 답하게 할 수 있어요
-const realMock=(u)=>{
+const realMock=(u)=>{ if(u.includes('/om?u=')) u=decodeURIComponent(u.split('/om?u=')[1]);
  if(window.__offline) return Promise.reject(new TypeError('Failed to fetch'));
  // 기상청 중계 서버(worker/kma-worker.js) 흉내: 주소에 /now?, /fcst? 가 들어가면
  if(window.__kmaFail && /\/(now|fcst)\?/.test(u)) return J({ok:false,error:window.__kmaFail});
